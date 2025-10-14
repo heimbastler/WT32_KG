@@ -50,11 +50,11 @@
 #define SCL_PIN 32
 
 // ---------- PCF8574 Adressen ----------
-PCF8574 pcfIn1(0x20);
-PCF8574 pcfIn2(0x21);
-PCF8574 pcfRel1(0x22);
-PCF8574 pcfRel2(0x23);
-PCF8574 pcfRel3(0x24);
+PCF8574 pcfIn1(0x20);    // A2 = GND, A1 = GND, A0 = GND
+PCF8574 pcfIn2(0x21);    // A2 = GND, A1 = GND, A0 = VCC
+PCF8574 pcfRel1(0x22);    // A2 = GND, A1 = VCC, A0 = GND
+PCF8574 pcfRel2(0x23);    // A2 = GND, A1 = VCC, A0 = VCC
+PCF8574 pcfRel3(0x24);    // A2 = VCC, A1 = GND, A0 = GND
 
 // ---------- MPR121 Sensoren ----------
 Adafruit_MPR121 cap1 = Adafruit_MPR121();
