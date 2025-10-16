@@ -40,25 +40,26 @@ TouchBoard 1: Tür Garten EG (I2C 0x5A)
  
  ##############################################
  ##                     ##                   ##
- ##    Kronleuchter     ##    toggleLamps    ##
- ##       case         ##      case       ##
+ ##    ??               ##    ??             ##
+ ##       case          ##      case         ##
  ##                     ##                   ##
  ##############################################
  ##                     ##                   ##
- ##    Traegerlampen    ##      ##
- ##       case         ##      case       ##
+ ##    ??               ##    ??             ##
+ ##       case          ##      case         ##
  ##                     ##                   ##
  ##############################################
  ##                     ##                   ##
- ##    Kuechenlampe     ##    EGFlurlampe    ##
- ##       case         ##      case        ##
+ ##    ??               ##    ??             ##
+ ##       case          ##      case         ##
  ##                     ##                   ##
  ##############################################
  ##                     ##                   ##
- ##     EGFlurlampe     ## AussenlampeGarten ##
- ##       case         ##      case        ##
+ ##    ??               ##    ??             ##
+ ##       case          ##      case         ##
  ##                     ##                   ##
  ##############################################
+ 
 
 case 2: toggleWohnzimmerlampe1(); break;    // oben 1te von links
 case 5: toggleTraegerlampen(); break;       // oben 2te von links

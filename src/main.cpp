@@ -120,6 +120,13 @@ void toggleAussenlampeStrasse();
 void toggleKlingeltrafo();
 void toggleLamps();
 
+// --- Webserver Funktionsprototypen ---
+void handleRoot();
+void handleToggle();
+
+// --- MPR121 Funktionsprototypen ---
+void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx);
+
 // --- Zeitsteuerung für Rollos ---
 unsigned long fensterrolloTimer = 0;
 unsigned long tuerrolloTimer = 0;
