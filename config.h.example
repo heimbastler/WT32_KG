@@ -1,0 +1,45 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ======================================================
+// BEISPIEL KONFIGURATION - config.h.example
+// Kopiere diese Datei zu config.h und passe die Werte an!
+// ======================================================
+
+// --- WiFi Konfiguration ---
+#define WIFI_SSID "MeinWLAN"
+#define WIFI_PASSWORD "MeinWLANPasswort"
+
+// --- Access Point Konfiguration (Fallback) ---
+#define AP_SSID "WT32-KG-Setup"
+#define AP_PASSWORD "12345678"  // Mindestens 8 Zeichen
+
+// --- Statische IP Konfiguration (optional) ---
+// Auskommentieren für DHCP, aktivieren für feste IP
+// #define USE_STATIC_IP
+#define STATIC_IP IPAddress(192, 168, 1, 100)
+#define GATEWAY   IPAddress(192, 168, 1, 1)
+#define SUBNET    IPAddress(255, 255, 255, 0)
+#define DNS1      IPAddress(8, 8, 8, 8)
+#define DNS2      IPAddress(8, 8, 4, 4)
+
+// --- Web Interface Security ---
+#define WEB_USERNAME "admin"
+#define WEB_PASSWORD "admin123"  // ÄNDERE DAS PASSWORT!
+
+// --- Ethernet Konfiguration ---
+// Auskommentieren für DHCP, aktivieren für feste IP
+// #define ETH_USE_STATIC_IP
+#define ETH_STATIC_IP IPAddress(192, 168, 1, 200)
+#define ETH_GATEWAY   IPAddress(192, 168, 1, 1)
+#define ETH_SUBNET    IPAddress(255, 255, 255, 0)
+
+// --- System Konfiguration ---
+#define HOSTNAME "wt32-kg"
+#define OTA_PASSWORD "update123"  // Für Over-the-Air Updates
+
+// --- Timeouts ---
+#define WIFI_CONNECT_TIMEOUT 30000  // 30 Sekunden
+#define AP_TIMEOUT 300000          // 5 Minuten AP-Modus
+
+#endif

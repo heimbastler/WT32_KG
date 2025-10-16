@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WT32-KG Controller - Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial;
+            margin: 10px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h2 {
+            color: #333;
+            text-align: center;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        
+        h3 {
+            color: #555;
+            margin-top: 30px;
+            border-left: 4px solid #2196F3;
+            padding-left: 15px;
+        }
+        
+        /* Button Styles */
+        .btn {
+            padding: 12px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            min-width: 200px;
+            display: inline-block;
+            text-align: center;
+            text-decoration: none;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .btn-on {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn-off {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-rollo {
+            background: #FF9800;
+            color: white;
+            min-width: 100px;
+            margin: 2px;
+        }
+        
+        .btn-neutral {
+            background: #607D8B;
+            color: white;
+        }
+        
+        /* Layout Styles */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .card {
+            background: #fafafa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        
+        .rollo-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            align-items: center;
+            margin: 10px 0;
+        }
+        
+        .rollo-label {
+            min-width: 180px;
+            font-weight: bold;
+        }
+        
+        /* Table Styles */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        
+        td, th {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        
+        th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        
+        /* Preview Notice */
+        .preview-notice {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        
+        .status-bar {
+            background: #263238;
+            color: #4CAF50;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="preview-notice">
+            🎨 WEB-GUI PREVIEW MODE 🎨<br>
+            <small>Dies ist eine statische Vorschau der WT32-KG Web-Oberfläche</small>
+        </div>
+        
+        <h2>🏠 WT32-KG Smart Home Controller</h2>
+        
+        <!-- Network Status -->
+        <div class="status-bar">
+            📡 Netzwerk: Ethernet ✓ | WiFi: Verbunden ✓ | IP: 192.168.1.100
+        </div>
+        
+        <!-- LED Dimmer -->
+        <h3>💡 LED Dimmer Kellertreppe</h3>
+        <div style="margin:20px 0;">
+            <label for="ledSlider">Helligkeit: <b id="brightness-value">50%</b></label><br>
+            <input type="range" id="ledSlider" min="0" max="100" value="50" 
+                   style="width:300px;" oninput="updateBrightness(this.value)"><br>
+            <span style="font-size:12px;">0%</span>
+            <span style="float:right;font-size:12px;">100%</span>
+        </div>
+
+        <!-- Temperature Sensors -->
+        <h3>🌡️ Temperatursensoren (3 gefunden)</h3>
+        <table style="margin-bottom:20px;">
+            <tr>
+                <th>Sensor</th>
+                <th>Temperatur</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>DS18B20 #1</td>
+                <td style="color:black;font-weight:bold;">22.5 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+            <tr>
+                <td>DS18B20 #2</td>
+                <td style="color:blue;font-weight:bold;">18.2 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+            <tr>
+                <td>DS18B20 #3</td>
+                <td style="color:red;font-weight:bold;">26.8 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+        </table>
+        <p style="font-size:12px;color:gray;">🔄 Update alle 60s | GPIO12 mit 4.7kΩ Pull-up</p>
+
+        <!-- Rollläden -->
+        <h3>🪟 Rollläden</h3>
+        <div class="card">
+            <!-- Fensterrollo -->
+            <div class="rollo-group">
+                <span class="rollo-label">Fensterrollo:</span>
+                <a href="#" class="btn btn-rollo" onclick="toggleRollo('fenster', 'up')">▲ Hoch</a>
+                <a href="#" class="btn btn-rollo" onclick="toggleRollo('fenster', 'down')">▼ Runter</a>
+                <span style="margin-left:10px;color:#666;" id="fenster-status">(Stopp)</span>
+            </div>
+            
+            <!-- Türrollo -->
+            <div class="rollo-group">
+                <span class="rollo-label">Türrollo:</span>
+                <a href="#" class="btn btn-rollo" onclick="toggleRollo('tuer', 'up')">▲ Hoch</a>
+                <a href="#" class="btn btn-rollo" onclick="toggleRollo('tuer', 'down')">▼ Runter</a>
+                <span style="margin-left:10px;color:#666;" id="tuer-status">(Stopp)</span>
+            </div>
+        </div>
+
+        <!-- Lampen -->
+        <h3>💡 Beleuchtung</h3>
+        <div class="grid">
+            <!-- Außenbeleuchtung -->
+            <div class="card">
+                <h4>🌙 Außenbeleuchtung</h4>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🌳 Garten: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🗿 Steinlampe: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🛣️ Straße: AUS</a>
+            </div>
+            
+            <!-- Innenbeleuchtung -->
+            <div class="card">
+                <h4>🏠 Innenbeleuchtung</h4>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔽 KG Flur: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔼 EG Flur: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">✨ Trägerlampen: AUS</a>
+            </div>
+            
+            <!-- Küche -->
+            <div class="card">
+                <h4>🍳 Küche</h4>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Arbeitsplatte: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🍽️ Küchenlampe: AUS</a>
+            </div>
+            
+            <!-- Wohnzimmer -->
+            <div class="card">
+                <h4>🛋️ Wohnzimmer</h4>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Lampe 1: AUS</a><br>
+                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Lampe 2: AUS</a>
+            </div>
+        </div>
+
+        <!-- Freie Relais -->
+        <h3>⚙️ Freie Relais & Sonstiges</h3>
+        <div class="card">
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔔 Klingeltrafo: AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 15: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 16: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 17: AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 18: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 19: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 20: AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 21: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 22: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 23: AUS</a>
+        </div>
+
+        <!-- Eingänge -->
+        <h3>📊 Digitale Eingänge</h3>
+        <table>
+            <tr>
+                <th>Eingang</th>
+                <th>Funktion</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>IN0</td>
+                <td>IR-Küche Links</td>
+                <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+            <tr>
+                <td>IN1</td>
+                <td>IR-Küche Rechts</td>
+                <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+            <tr>
+                <td>IN2</td>
+                <td>Kreuz EG1</td>
+                <td style="background-color:lightgreen;font-weight:bold;">HIGH</td>
+            </tr>
+            <tr>
+                <td>IN3</td>
+                <td>Kreuz EG2</td>
+                <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+            <tr>
+                <td>IN4</td>
+                <td>Kreuz KG1</td>
+                <td style="background-color:lightgreen;font-weight:bold;">HIGH</td>
+            </tr>
+            <tr>
+                <td>IN5</td>
+                <td>Kreuz KG2</td>
+                <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+            <tr>
+                <td>IN6</td>
+                <td>Kreuz KG3</td>
+                <td style="background-color:lightgreen;font-weight:bold;">HIGH</td>
+            </tr>
+            <tr>
+                <td>IN7</td>
+                <td>Frei</td>
+                <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+        </table>
+        
+        <br><a href="#" style="color:#2196F3;text-decoration:none;">📶 WiFi Konfiguration</a>
+        
+        <!-- Serial Output Simulation -->
+        <h3>📟 Serielle Ausgabe (Simulation)</h3>
+        <div id="serial-output" style="background:#000;color:#00ff00;padding:15px;border-radius:5px;font-family:'Courier New',monospace;height:200px;overflow-y:scroll;border:2px solid #333;">
+            === WT32-KG Smart Home Controller ===<br>
+            I2C initialisiert auf GPIO32/33<br>
+            Netzwerk: Ethernet verbunden (192.168.1.100)<br>
+            TouchBoards initialisiert: 3x MPR121<br>
+            Temperatursensoren: 3 gefunden<br>
+            Webserver gestartet auf Port 80<br>
+            <span style="color:#ffff00;">[READY] System bereit für Eingaben</span><br>
+        </div>
+    </div>
+
+    <script>
+        // LED Brightness Slider
+        function updateBrightness(value) {
+            document.getElementById('brightness-value').textContent = value + '%';
+            addSerialOutput(`LED Treppe Helligkeit: ${value}%`);
+        }
+
+        // Lamp Toggle Functionality
+        function toggleLamp(button) {
+            if (button.classList.contains('btn-off')) {
+                button.classList.remove('btn-off');
+                button.classList.add('btn-on');
+                button.innerHTML = button.innerHTML.replace('AUS', 'EIN');
+                addSerialOutput(`${button.innerHTML.split(':')[0]} → EIN`);
+            } else {
+                button.classList.remove('btn-on');
+                button.classList.add('btn-off');
+                button.innerHTML = button.innerHTML.replace('EIN', 'AUS');
+                addSerialOutput(`${button.innerHTML.split(':')[0]} → AUS`);
+            }
+        }
+
+        // Rollo Toggle Functionality
+        let rolloStates = { fenster: 'stop', tuer: 'stop' };
+        
+        function toggleRollo(type, direction) {
+            const statusElement = document.getElementById(type + '-status');
+            const buttons = document.querySelectorAll(`[onclick*="${type}"]`);
+            
+            if (rolloStates[type] === direction) {
+                // Stop rollo
+                rolloStates[type] = 'stop';
+                statusElement.textContent = '(Stopp)';
+                buttons[0].innerHTML = '▲ Hoch';
+                buttons[0].className = 'btn btn-rollo';
+                buttons[1].innerHTML = '▼ Runter';
+                buttons[1].className = 'btn btn-rollo';
+                addSerialOutput(`${type.charAt(0).toUpperCase() + type.slice(1)}rollo STOPP`);
+            } else {
+                // Start rollo in direction
+                rolloStates[type] = direction;
+                if (direction === 'up') {
+                    statusElement.textContent = '(Fährt hoch)';
+                    buttons[0].innerHTML = '⏹️ Stopp';
+                    buttons[0].className = 'btn btn-neutral';
+                    buttons[1].innerHTML = '▼ Runter';
+                    buttons[1].className = 'btn btn-rollo';
+                    addSerialOutput(`${type.charAt(0).toUpperCase() + type.slice(1)}rollo START hoch`);
+                } else {
+                    statusElement.textContent = '(Fährt runter)';
+                    buttons[0].innerHTML = '▲ Hoch';
+                    buttons[0].className = 'btn btn-rollo';
+                    buttons[1].innerHTML = '⏹️ Stopp';
+                    buttons[1].className = 'btn btn-neutral';
+                    addSerialOutput(`${type.charAt(0).toUpperCase() + type.slice(1)}rollo START runter`);
+                }
+            }
+        }
+
+        // Serial Output Simulation
+        function addSerialOutput(message) {
+            const output = document.getElementById('serial-output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.innerHTML += `<span style="color:#888;">[${timestamp}]</span> ${message}<br>`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Simulate some periodic updates
+        setInterval(() => {
+            const temps = ['22.5', '18.2', '26.8'];
+            const randomTemp = temps[Math.floor(Math.random() * temps.length)];
+            if (Math.random() > 0.95) {
+                addSerialOutput(`Temperatursensor Update: ${randomTemp}°C`);
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
