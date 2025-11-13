@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                    WT32-ETH01 (ESP32-WROOM-32) Pin Layout                   ║
-// ║                              Version 1.4                                    ║
+// ║                    WT32-ETH01 (ESP32-WROOM-32) Pin Layout                    ║
+// ║                              Version 1.4                                     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 //  ┌─────────────────┐                               ┌─────────────────┐
@@ -28,8 +28,9 @@
 //  └─────────────────┘                               └─────────────────┘
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                           AKTUELLE PIN BELEGUNG                             ║
+// ║                           AKTUELLE PIN BELEGUNG                              ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
+// 🔸 GPIO4   → AC Dimmer Kronleuchter (PWM, 220V Dimmer)
 // 🔸 GPIO12  → 1-Wire Bus Temperatursensoren (needs 4.7k pullup)
 // 🔸 GPIO14  → LED Dimmer Kellertreppe (PWM, MOSFET Gate)
 // 📡 GPIO32  → I2C SCL (PCF8574, PCA9535, MPR121)
@@ -63,6 +64,7 @@
 #include <WebServer.h>
 #include <ETH.h>
 #include <WiFi.h>
+#include <ArduinoOTA.h>
 #include <PCF8574.h> // wieder hinzufügen für die Switches
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
@@ -84,10 +86,12 @@ String getNetworkStatus();
 #define SCL_PIN 32
 
 // ---------- PWM Setup für LED Dimmer ----------
-#define LED_TREPPE_PIN 14    // GPIO14 für MOSFET Kellertreppe LEDs
-#define PWM_CHANNEL 0        // LEDC Kanal 0
-#define PWM_FREQ 5000        // 5kHz Frequenz
-#define PWM_RESOLUTION 8     // 8-bit Resolution (0-255)
+#define LED_TREPPE_PIN 14        // GPIO14 für MOSFET Kellertreppe LEDs
+#define KRONLEUCHTER_DIMMER_PIN 4  // GPIO4 für AC Dimmer Kronleuchter 220V
+#define PWM_CHANNEL_TREPPE 0     // LEDC Kanal 0 für Kellertreppe
+#define PWM_CHANNEL_KRONLEUCHTER 1 // LEDC Kanal 1 für Kronleuchter
+#define PWM_FREQ 5000            // 5kHz Frequenz
+#define PWM_RESOLUTION 8         // 8-bit Resolution (0-255)
 
 // ---------- 1-Wire Setup für Temperatursensoren ----------
 #define ONE_WIRE_BUS 12      // GPIO12 für DS18B20 Temperatursensoren
@@ -138,7 +142,11 @@ WebServer server(80);
 // ---------- Zustandsspeicher ----------
 uint8_t relayState[24];   // 3 PCFs à 8 Ausgänge
 uint8_t inputState[16];   // 2 PCFs à 8 Eingänge
-uint8_t ledTreppeBrightness = 0;  // LED Kellertreppe Helligkeit (0-255)
+uint8_t ledTreppeBrightness = 0;      // LED Kellertreppe Helligkeit (0-255)
+uint8_t kronleuchterBrightness = 0;   // Kronleuchter AC Dimmer Helligkeit (0-255)
+bool kronleuchterDimmingUp = true;    // Dimm-Richtung für Touch-Steuerung
+unsigned long lastTouchTime = 0;      // Zeitstempel letzter Touch
+const unsigned long touchDebounceTime = 200;  // 200ms Entprellung
 
 // ---------- IR-Switch Küche Zustand ----------
 uint8_t lastIRSwitchLeft = LOW;   // Letzter Zustand linker Taster
@@ -170,8 +178,8 @@ const char* relayNames[24] = {
   "Kuechenlampe",           // R08, idx 8, TouchBoard2: case 2: 3te links
   "EG Flurlampe",           // R09, idx 9, TouchBoard2: case 0: 3te rechts
   "Traegerlampen",          // R10, idx 10, TouchBoard2: case 1: unten rechts
-  "Wohnzimmerlampe 1",      // R11, idx 11, TouchBoard1: case 2: oben 1te von links
-  "Wohnzimmerlampe 2",      // R12, idx 12, TouchBoard1: kein direkter Touch, nur Gruppe
+  "Kronleuchter",           // R11, idx 11, TouchBoard1: case 2: AC Dimmer über GPIO4
+  "Reserve Wohnzimmer",     // R12, idx 12, TouchBoard1: kein direkter Touch, Reserve
   "Relais 13",              // R13, idx 13
   "Relais 14",              // R14, idx 14
   "Relais 15",              // R15, idx 15
@@ -197,14 +205,14 @@ void toggleKuechenarbeitslampe();
 void toggleKuechenlampe();
 void toggleEGFlurlampe();
 void toggleTraegerlampen();
-void toggleWohnzimmerlampe1();
+void toggleKronleuchter();
+void dimKronleuchter(bool dimUp);
 void toggleWohnzimmerlampe2();
-void toggleAussenlampeStrasse();
-void toggleKlingeltrafo();
 void toggleLamps();
 
 // --- PWM Funktionsprototypen ---
 void setLEDTreppeBrightness(uint8_t brightness);
+void setKronleuchterBrightness(uint8_t brightness);
 
 // --- 1-Wire Temperatursensor Funktionsprototypen ---
 void initTemperatureSensors();
@@ -242,6 +250,44 @@ void setup() {
   // Netzwerk initialisieren (Ethernet + WiFi + AP)
   initNetworking();
 
+  // OTA Setup nach Netzwerk-Initialisierung
+  ArduinoOTA.setHostname("WT32-KG-Controller");
+  ArduinoOTA.setPassword("WT32_SecureOTA_2024"); // Sicheres Passwort
+  
+  ArduinoOTA.onStart([]() {
+    String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+    Serial.println("Start updating " + type);
+    // Sicherheitshalber alle Relais ausschalten während Update
+    for (int i = 0; i < 8; i++) {
+      pcaRel1.digitalWrite(i, HIGH);
+      pcaRel2.digitalWrite(i, HIGH);  
+      pcaRel3.digitalWrite(i, HIGH);
+    }
+    // LEDs ausschalten
+    setLEDTreppeBrightness(0);
+    setKronleuchterBrightness(0);
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA Update completed successfully!");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA Progress: %u%%\r", (progress / (total / 100)));
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  
+  ArduinoOTA.begin();
+  Serial.println("OTA Ready - Hostname: WT32-KG-Controller");
+
   // PCF8574 Switches starten
   pcfIn1.begin();
   pcfIn2.begin();
@@ -273,6 +319,10 @@ void setup() {
   // PWM für LED Dimmer konfigurieren
   ledcAttach(LED_TREPPE_PIN, PWM_FREQ, PWM_RESOLUTION);
   setLEDTreppeBrightness(0); // Starten mit LEDs aus
+  
+  // PWM für Kronleuchter AC Dimmer konfigurieren
+  ledcAttach(KRONLEUCHTER_DIMMER_PIN, PWM_FREQ, PWM_RESOLUTION);
+  setKronleuchterBrightness(0); // Starten mit Kronleuchter aus
 
   // TouchBoards initialisieren
   initTouchBoards();
@@ -284,6 +334,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/toggle", handleToggle);
   server.on("/led", handleLEDDimmer);
+  server.on("/kronleuchter", handleKronleuchterDimmer);
   server.begin();
   Serial.println("Webserver gestartet");
 }
@@ -292,6 +343,7 @@ void setup() {
 // LOOP
 // ======================================================
 void loop() {
+  ArduinoOTA.handle();  // OTA Updates verarbeiten
   server.handleClient();
   
   // Netzwerk Events überwachen
@@ -394,9 +446,24 @@ void handleRoot() {
   html += "  fetch('/led?brightness=' + value);";
   html += "}";
   html += "</script>";
-
-  // Temperatursensoren
-  html += getTemperatureHTML();
+  
+  // Kronleuchter AC Dimmer
+  html += "<h3>💡 AC Dimmer Kronleuchter</h3>";
+  int kronleuchterPercent = (kronleuchterBrightness * 100) / 255;
+  html += "<div style='margin:20px 0;'>";
+  html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(kronleuchterPercent) + "%</b></label><br>";
+  html += "<input type='range' id='kronleuchterSlider' min='0' max='100' value='" + String(kronleuchterPercent) + "' ";
+  html += "style='width:300px;' oninput='updateKronleuchter(this.value)'><br>";
+  html += "<span style='font-size:12px;'>0%</span>";
+  html += "<span style='float:right;font-size:12px;'>100%</span>";
+  html += "</div>";
+  
+  html += "<script>";
+  html += "function updateKronleuchter(value) {";
+  html += "  document.querySelectorAll('label b')[1].textContent = value + '%';";
+  html += "  fetch('/kronleuchter?brightness=' + value);";
+  html += "}";
+  html += "</script>";
 
   // Rollläden
   html += "<h3>🪟 Rollläden</h3>";
@@ -444,68 +511,95 @@ void handleRoot() {
   
   html += "</div>";
 
-  // Lampen
-  html += "<h3>💡 Beleuchtung</h3>";
-  html += "<div class='grid'>";
-  
-  // Außenbeleuchtung
+  // Lampen - alle zusammengefasst und nach Relaisnummer sortiert
+  html += "<h3>💡 Lampen</h3>";
   html += "<div class='card'>";
-  html += "<h4>🌙 Außenbeleuchtung</h4>";
   
+  // R04 - Aussenlampe Garten
   String aussenGartenClass = relayState[4] ? "btn-on" : "btn-off";
-  String aussenGartenStatus = relayState[4] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=4' class='btn " + aussenGartenClass + "'>🌳 Garten: " + aussenGartenStatus + "</a><br>";
+  html += "<a href='/toggle?r=4' class='btn " + aussenGartenClass + "'>💡 Aussenlampe Garten (R04)</a><br>";
   
+  // R05 - Steinlampe
+  String steinlampeClass = relayState[5] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=5' class='btn " + steinlampeClass + "'>💡 Steinlampe (R05)</a><br>";
+  
+  // R06 - KG Flurlampe
+  String kgFlurClass = relayState[6] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=6' class='btn " + kgFlurClass + "'>💡 KG Flurlampe (R06)</a><br>";
+  
+  // R07 - Kuechenarbeitslampe
+  String kuechenArbeitClass = relayState[7] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=7' class='btn " + kuechenArbeitClass + "'>💡 Kuechenarbeitslampe (R07)</a><br>";
+  
+  // R08 - Kuechenlampe
+  String kuechenClass = relayState[8] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=8' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08)</a><br>";
+  
+  // R09 - EG Flurlampe
+  String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=9' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09)</a><br>";
+  
+  // R10 - Traegerlampen
+  String traegerClass = relayState[10] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=10' class='btn " + traegerClass + "'>💡 Traegerlampen (R10)</a><br>";
+  
+  // R11 - Kronleuchter (mit Dimmerfunktion)
+  String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
+  int kronPercent = (kronleuchterBrightness * 100) / 255;
+  html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
+  if (relayState[11]) {
+    html += " (" + String(kronPercent) + "%)";
+  }
+  html += "</a><br>";
+  
+  // R12 - Reserve Wohnzimmer
+  String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
+  html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</a>";
+  
+  // R05 - Steinlampe
   String steinlampeClass = relayState[5] ? "btn-on" : "btn-off";
   String steinlampeStatus = relayState[5] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=5' class='btn " + steinlampeClass + "'>🗿 Steinlampe: " + steinlampeStatus + "</a><br>";
+  html += "<a href='/toggle?r=5' class='btn " + steinlampeClass + "'>� Steinlampe (R05): " + steinlampeStatus + "</a><br>";
   
-  String aussenStrasseClass = relayState[13] ? "btn-on" : "btn-off";
-  String aussenStrasseStatus = relayState[13] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=13' class='btn " + aussenStrasseClass + "'>🛣️ Straße: " + aussenStrasseStatus + "</a>";
-  html += "</div>";
-  
-  // Innenbeleuchtung
-  html += "<div class='card'>";
-  html += "<h4>🏠 Innenbeleuchtung</h4>";
-  
+  // R06 - KG Flurlampe
   String kgFlurClass = relayState[6] ? "btn-on" : "btn-off";
   String kgFlurStatus = relayState[6] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=6' class='btn " + kgFlurClass + "'>🔽 KG Flur: " + kgFlurStatus + "</a><br>";
+  html += "<a href='/toggle?r=6' class='btn " + kgFlurClass + "'>� KG Flurlampe (R06): " + kgFlurStatus + "</a><br>";
   
-  String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
-  String egFlurStatus = relayState[9] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=9' class='btn " + egFlurClass + "'>🔼 EG Flur: " + egFlurStatus + "</a><br>";
-  
-  String traegerClass = relayState[10] ? "btn-on" : "btn-off";
-  String traegerStatus = relayState[10] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=10' class='btn " + traegerClass + "'>✨ Trägerlampen: " + traegerStatus + "</a>";
-  html += "</div>";
-  
-  // Küche
-  html += "<div class='card'>";
-  html += "<h4>🍳 Küche</h4>";
-  
+  // R07 - Kuechenarbeitslampe
   String kuechenArbeitClass = relayState[7] ? "btn-on" : "btn-off";
   String kuechenArbeitStatus = relayState[7] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=7' class='btn " + kuechenArbeitClass + "'>💡 Arbeitsplatte: " + kuechenArbeitStatus + "</a><br>";
+  html += "<a href='/toggle?r=7' class='btn " + kuechenArbeitClass + "'>� Kuechenarbeitslampe (R07): " + kuechenArbeitStatus + "</a><br>";
   
+  // R08 - Kuechenlampe
   String kuechenClass = relayState[8] ? "btn-on" : "btn-off";
   String kuechenStatus = relayState[8] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=8' class='btn " + kuechenClass + "'>🍽️ Küchenlampe: " + kuechenStatus + "</a>";
-  html += "</div>";
+  html += "<a href='/toggle?r=8' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08): " + kuechenStatus + "</a><br>";
   
-  // Wohnzimmer
-  html += "<div class='card'>";
-  html += "<h4>🛋️ Wohnzimmer</h4>";
+  // R09 - EG Flurlampe
+  String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
+  String egFlurStatus = relayState[9] ? "EIN" : "AUS";
+  html += "<a href='/toggle?r=9' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09): " + egFlurStatus + "</a><br>";
   
-  String wohnzimmer1Class = relayState[11] ? "btn-on" : "btn-off";
-  String wohnzimmer1Status = relayState[11] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=11' class='btn " + wohnzimmer1Class + "'>💡 Lampe 1: " + wohnzimmer1Status + "</a><br>";
+  // R10 - Traegerlampen
+  String traegerClass = relayState[10] ? "btn-on" : "btn-off";
+  String traegerStatus = relayState[10] ? "EIN" : "AUS";
+  html += "<a href='/toggle?r=10' class='btn " + traegerClass + "'>💡 Traegerlampen (R10): " + traegerStatus + "</a><br>";
   
+  // R11 - Kronleuchter (mit Dimmerfunktion)
+  String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
+  String kronleuchterStatus = relayState[11] ? "EIN" : "AUS";
+  int kronPercent = (kronleuchterBrightness * 100) / 255;
+  html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11): " + kronleuchterStatus;
+  if (relayState[11]) {
+    html += " (" + String(kronPercent) + "%)";
+  }
+  html += "</a><br>";
+  
+  // R12 - Reserve Wohnzimmer
   String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
   String wohnzimmer2Status = relayState[12] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Lampe 2: " + wohnzimmer2Status + "</a>";
+  html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12): " + wohnzimmer2Status + "</a>";
   html += "</div>";
   
   html += "</div>";
@@ -514,9 +608,12 @@ void handleRoot() {
   html += "<h3>⚙️ Freie Relais & Sonstiges</h3>";
   html += "<div class='card'>";
   
-  String klingelClass = relayState[14] ? "btn-on" : "btn-off";
-  String klingelStatus = relayState[14] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=14' class='btn " + klingelClass + "'>🔔 Klingeltrafo: " + klingelStatus + "</a><br>";
+  // Freie Relais 13-23
+  for (int i = 13; i < 15; i++) {
+    String relaisClass = relayState[i] ? "btn-on" : "btn-off";
+    String relaisStatus = relayState[i] ? "EIN" : "AUS";
+    html += "<a href='/toggle?r=" + String(i) + "' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</a><br>";
+  }
   
   // Freie Relais 15-23
   for (int i = 15; i < 24; i++) {
@@ -550,6 +647,9 @@ void handleRoot() {
   }
   html += "</table>";
   
+  // Temperatursensoren nach digitalen Eingängen
+  html += getTemperatureHTML();
+  
   html += "<br><a href='/wifi' style='color:#2196F3;text-decoration:none;'>📶 WiFi Konfiguration</a>";
   html += "</div></body></html>";
   server.send(200, "text/html", html);
@@ -567,6 +667,9 @@ void handleToggle() {
     toggleTuerrolloUp();
   } else if (idx == 3) {
     toggleTuerrolloDown();
+  } else if (idx == 11) {
+    // Spezielle Behandlung für Kronleuchter (AC Dimmer)
+    toggleKronleuchter();
   } else if (idx < 24) {
     // Standard Toggle für alle anderen Relais
     relayState[idx] = !relayState[idx];
@@ -728,18 +831,6 @@ void toggleWohnzimmerlampe2() {
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(5, relayState[idx] ? LOW : HIGH);
 }
-void toggleAussenlampeStrasse() {
-  // R13 (idx 13)
-  int idx = 13;
-  relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(6, relayState[idx] ? LOW : HIGH);
-}
-void toggleKlingeltrafo() {
-  // R14 (idx 14)
-  int idx = 14;
-  relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(7, relayState[idx] ? LOW : HIGH);
-}
 void toggleLamps() {
   // Gruppe: R05, R07, R08, R09, R10, R11, R12 (idx 5,7,8,9,10,11,12)
   // Touch Zuordnung siehe readTouchInputs2/readTouchInputs3
@@ -773,6 +864,74 @@ void handleLEDDimmer() {
   }
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+// ======================================================
+// Kronleuchter AC Dimmer Funktionen
+// ======================================================
+void setKronleuchterBrightness(uint8_t brightness) {
+  kronleuchterBrightness = brightness;
+  ledcWrite(KRONLEUCHTER_DIMMER_PIN, brightness);
+  Serial.println("Kronleuchter Helligkeit: " + String(brightness) + " (" + String(brightness * 100 / 255) + "%)");
+}
+
+void handleKronleuchterDimmer() {
+  if (server.hasArg("brightness")) {
+    int brightness = server.arg("brightness").toInt();
+    if (brightness >= 0 && brightness <= 100) {
+      // Umrechnung von Prozent (0-100) zu PWM-Wert (0-255)
+      uint8_t pwmValue = (brightness * 255) / 100;
+      setKronleuchterBrightness(pwmValue);
+      
+      // Auch das Relais entsprechend schalten
+      if (brightness > 0) {
+        relayState[11] = 1; // R11 = Kronleuchter EIN
+        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+      } else {
+        relayState[11] = 0; // R11 = Kronleuchter AUS
+        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+      }
+    }
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void toggleKronleuchter() {
+  // Kronleuchter toggle: AUS → 50% → AUS
+  if (kronleuchterBrightness == 0) {
+    setKronleuchterBrightness(127); // 50% Helligkeit
+    relayState[11] = 1; // R11 EIN
+    pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+  } else {
+    setKronleuchterBrightness(0); // AUS
+    relayState[11] = 0; // R11 AUS
+    pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+  }
+}
+
+void dimKronleuchter(bool dimUp) {
+  const uint8_t dimStep = 15; // Dimm-Schritte
+  
+  if (dimUp) {
+    // Heller dimmen
+    if (kronleuchterBrightness < 240) {
+      setKronleuchterBrightness(kronleuchterBrightness + dimStep);
+      if (kronleuchterBrightness > 0) {
+        relayState[11] = 1; // R11 EIN wenn > 0
+        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+      }
+    }
+  } else {
+    // Dunkler dimmen
+    if (kronleuchterBrightness > dimStep) {
+      setKronleuchterBrightness(kronleuchterBrightness - dimStep);
+    } else {
+      setKronleuchterBrightness(0); // Komplett aus
+      relayState[11] = 0; // R11 AUS
+      pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+    }
+  }
 }
 
 // ======================================================

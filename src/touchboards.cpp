@@ -22,11 +22,13 @@ extern void toggleKuechenarbeitslampe();
 extern void toggleKuechenlampe();
 extern void toggleEGFlurlampe();
 extern void toggleTraegerlampen();
-extern void toggleWohnzimmerlampe1();
+extern void toggleKronleuchter();
+extern void dimKronleuchter(bool dimUp);
 extern void toggleLamps();
 
-// Lokaler Funktionsprototyp
+// Lokale Funktionsprototypen
 void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx);
+void handleKronleuchterTouchEvent(bool isTouched);
 
 // ===================================================
 // Touch Panel Belegung (3x MPR121)
@@ -34,8 +36,6 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx);
 
  /*
  TouchBoard 2: Säule Garten EG (I2C 0x5C)
- TouchBoard 3: Säule Strasse EG (I2C 0x5D)
-
  #############################################
  ##                     ##                  ##
  ##    toggleLamps      ##    toggleLamps   ##
@@ -60,40 +60,46 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx);
 
 
 
+TouchBoard 3: Säule Strasse EG (I2C 0x5D)
+ #############################################
+ ##                     ##                  ##
+ ##    toggleLamps      ##    toggleLamps   ##
+ ##       case 9        ##      case 10     ##
+ ##                     ##                  ##
+ #############################################
+ ##                     ##                  ##
+ ##     Steinlampe      ##   Kronleuchter   ##
+ ##       case 6        ##      case 11     ##
+ ##                     ##                  ##
+ #############################################
+ ##                     ##                  ##
+ ##    Kuechenlampe     ##    EGFlurlampe   ##
+ ##       case 3        ##      case 0      ##
+ ##                     ##                  ##
+ #############################################
+ ##                     ##                  ##
+ ## Kuechenarbeitslampe ##   Traegerlampen  ##
+ ##       case 2        ##      case 1      ##
+ ##                     ##                  ##
+ #############################################
+
+
 
 TouchBoard 1: Tür Garten EG (I2C 0x5A)
- 
- ##############################################
- ##                     ##                   ##
- ##    ??               ##    ??             ##
- ##       case          ##      case         ##
- ##                     ##                   ##
- ##############################################
- ##                     ##                   ##
- ##    ??               ##    ??             ##
- ##       case          ##      case         ##
- ##                     ##                   ##
- ##############################################
- ##                     ##                   ##
- ##    ??               ##    ??             ##
- ##       case          ##      case         ##
- ##                     ##                   ##
- ##############################################
- ##                     ##                   ##
- ##    ??               ##    ??             ##
- ##       case          ##      case         ##
- ##                     ##                   ##
- ##############################################
+ ##########################################################################################
+ ##                     ##                   ##                     ##                   ##
+ ##    Kronleuchter     ##    Traegerlampen  ##    TuerrolloUp      ##   FensterrolloUp  ##
+ ##       case 2        ##      case 5       ##       case 6        ##      case 9       ##
+ ##                     ##                   ##                     ##                   ##
+ ##########################################################################################
+ ##                     ##                   ##                     ##                   ##
+ ##    EGFlurlampe      ## AussenlampeGarten ##   TuerrolloDown     ## FensterrolloDown  ##
+ ##       case 1        ##      case 0       ##       case 11       ##      case 10      ##
+ ##                     ##                   ##                     ##                   ##
+ ##########################################################################################
  
 
-case 2: toggleWohnzimmerlampe1(); break;    // oben 1te von links
-case 5: toggleTraegerlampen(); break;       // oben 2te von links
-case 1: toggleEGFlurlampe(); break;         // unten 1te von links
-case 0: toggleAussenlampeGarten(); break;   // unten 2te von links
-case 9: toggleFensterrolloUp(); break;      // Taster für Fensterrollo up
-case 10: toggleFensterrolloDown(); break;   // Taster für Fensterrollo down
-case 6: toggleTuerrolloUp(); break;         // push button for Türrollo up
-case 11: toggleTuerrolloDown(); break;      // push button for Türrollo down
+
 
 */
 
@@ -135,9 +141,11 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx) {
         bool isTouched = touched & (1 << i);
         // --- Zuordnung wie in old.ccp ---
         if (sensorIdx == 0) { // TouchBoard 1: Tür Garten EG
-          if (isTouched) {
+          if (i == 2) {
+            // Spezielle Behandlung für Kronleuchter (case 2)
+            handleKronleuchterTouchEvent(isTouched);
+          } else if (isTouched) {
             switch (i) {
-              case 2: toggleWohnzimmerlampe1(); break;    // oben 1te von links
               case 5: toggleTraegerlampen(); break;       // oben 2te von links
               case 1: toggleEGFlurlampe(); break;         // unten 1te von links
               case 0: toggleAussenlampeGarten(); break;   // unten 2te von links
@@ -148,11 +156,13 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx) {
             }
           }
         } else if (sensorIdx == 1) { // TouchBoard 2: Säule Garten EG
-          if (isTouched) {
+          if (i == 10) {
+            // Spezielle Behandlung für Kronleuchter (case 10)
+            handleKronleuchterTouchEvent(isTouched);
+          } else if (isTouched) {
             switch (i) {
               case 9: toggleLamps(); break;               // oben links
               case 11: toggleLamps(); break;              // oben rechts
-              case 10: toggleWohnzimmerlampe1(); break;   // 2te rechts
               case 1: toggleTraegerlampen(); break;       // unten rechts
               case 2: toggleKuechenlampe(); break;        // 3te links
               case 3: toggleKuechenarbeitslampe(); break; // unten links
@@ -161,11 +171,13 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx) {
             }
           }
         } else if (sensorIdx == 2) { // TouchBoard 3: Säule Strasse EG
-          if (isTouched) {
+          if (i == 11) {
+            // Spezielle Behandlung für Kronleuchter (case 11)
+            handleKronleuchterTouchEvent(isTouched);
+          } else if (isTouched) {
             switch (i) {
               case 9: toggleLamps(); break;               // oben links
               case 10: toggleLamps(); break;              // oben rechts
-              case 11: toggleWohnzimmerlampe1(); break;   // 2te rechts
               case 1: toggleTraegerlampen(); break;       // unten rechts
               case 3: toggleKuechenlampe(); break;        // 3te links
               case 2: toggleKuechenarbeitslampe(); break; // unten links
@@ -177,5 +189,70 @@ void checkMPR(Adafruit_MPR121 &sensor, const char *name, int sensorIdx) {
       }
     }
     lastTouched[sensorIdx] = touched;
+  }
+}
+
+// ======================================================
+// Kronleuchter Touch Handler (mit Touch-Zeit-Erkennung)
+// ======================================================
+void handleKronleuchterTouchEvent(bool isTouched) {
+  static unsigned long touchStartTime = 0;
+  static bool longPressActive = false;
+  
+  extern unsigned long lastTouchTime;
+  extern const unsigned long touchDebounceTime;
+  extern bool kronleuchterDimmingUp;
+  extern uint8_t kronleuchterBrightness;
+  
+  unsigned long currentTime = millis();
+  
+  if (isTouched) {
+    // Touch PRESSED
+    if (touchStartTime == 0) {
+      touchStartTime = currentTime;
+      longPressActive = false;
+      Serial.println("🔆 Kronleuchter Touch START");
+    }
+    
+    // Prüfe auf langen Druck (nach 800ms)
+    unsigned long touchDuration = currentTime - touchStartTime;
+    if (touchDuration > 800 && !longPressActive) {
+      longPressActive = true;
+      Serial.println("🔆 Kronleuchter LANG-TOUCH → Dimmen startet");
+      
+      // Dimm-Richtung bestimmen
+      if (kronleuchterBrightness >= 240) {
+        kronleuchterDimmingUp = false; // Runter dimmen
+        Serial.println("🔆 Dimm-Richtung: RUNTER");
+      } else if (kronleuchterBrightness <= 15) {
+        kronleuchterDimmingUp = true;  // Hoch dimmen  
+        Serial.println("🔆 Dimm-Richtung: HOCH");
+      }
+      // Sonst aktuelle Richtung beibehalten
+      
+      dimKronleuchter(kronleuchterDimmingUp);
+    } else if (longPressActive && (touchDuration % 300) < 50) {
+      // Kontinuierliches Dimmen alle 300ms
+      dimKronleuchter(kronleuchterDimmingUp);
+    }
+    
+  } else {
+    // Touch RELEASED
+    if (touchStartTime > 0) {
+      unsigned long touchDuration = currentTime - touchStartTime;
+      
+      if (!longPressActive && touchDuration < 800) {
+        // Kurzer Touch → Toggle (AUS → 50% → AUS)
+        toggleKronleuchter();
+        Serial.println("🔆 Kronleuchter KURZ-TOUCH → Toggle");
+      } else if (longPressActive) {
+        Serial.println("🔆 Kronleuchter LANG-TOUCH beendet");
+      }
+      
+      // Reset für nächsten Touch
+      touchStartTime = 0;
+      longPressActive = false;
+      lastTouchTime = currentTime;
+    }
   }
 }

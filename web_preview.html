@@ -168,31 +168,20 @@
             <span style="float:right;font-size:12px;">100%</span>
         </div>
 
-        <!-- Temperature Sensors -->
-        <h3>🌡️ Temperatursensoren (3 gefunden)</h3>
-        <table style="margin-bottom:20px;">
-            <tr>
-                <th>Sensor</th>
-                <th>Temperatur</th>
-                <th>Status</th>
-            </tr>
-            <tr>
-                <td>DS18B20 #1</td>
-                <td style="color:black;font-weight:bold;">22.5 °C</td>
-                <td style="color:green;">✓ OK</td>
-            </tr>
-            <tr>
-                <td>DS18B20 #2</td>
-                <td style="color:blue;font-weight:bold;">18.2 °C</td>
-                <td style="color:green;">✓ OK</td>
-            </tr>
-            <tr>
-                <td>DS18B20 #3</td>
-                <td style="color:red;font-weight:bold;">26.8 °C</td>
-                <td style="color:green;">✓ OK</td>
-            </tr>
-        </table>
-        <p style="font-size:12px;color:gray;">🔄 Update alle 60s | GPIO12 mit 4.7kΩ Pull-up</p>
+        <!-- Kronleuchter AC Dimmer -->
+        <h3>💡 AC Dimmer Kronleuchter</h3>
+        <div style="margin:20px 0;">
+            <label for="kronleuchterSlider">Helligkeit: <b id="kronleuchter-brightness-value">0%</b></label><br>
+            <input type="range" id="kronleuchterSlider" min="0" max="100" value="0" 
+                   style="width:300px;" oninput="updateKronleuchterBrightness(this.value)"><br>
+            <span style="font-size:12px;">0%</span>
+            <span style="float:right;font-size:12px;">100%</span>
+            <div style="margin-top:10px; font-size:12px; color:#666;">
+                ⚡ AC Dimmer GPIO4 | 💡 220V Kronleuchter | 📱 Touch: kurz = toggle, lang = dimmen
+            </div>
+        </div>
+
+
 
         <!-- Rollläden -->
         <h3>🪟 Rollläden</h3>
@@ -214,44 +203,25 @@
             </div>
         </div>
 
-        <!-- Lampen -->
-        <h3>💡 Beleuchtung</h3>
-        <div class="grid">
-            <!-- Außenbeleuchtung -->
-            <div class="card">
-                <h4>🌙 Außenbeleuchtung</h4>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🌳 Garten: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🗿 Steinlampe: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🛣️ Straße: AUS</a>
-            </div>
-            
-            <!-- Innenbeleuchtung -->
-            <div class="card">
-                <h4>🏠 Innenbeleuchtung</h4>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔽 KG Flur: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔼 EG Flur: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">✨ Trägerlampen: AUS</a>
-            </div>
-            
-            <!-- Küche -->
-            <div class="card">
-                <h4>🍳 Küche</h4>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Arbeitsplatte: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🍽️ Küchenlampe: AUS</a>
-            </div>
-            
-            <!-- Wohnzimmer -->
-            <div class="card">
-                <h4>🛋️ Wohnzimmer</h4>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Lampe 1: AUS</a><br>
-                <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Lampe 2: AUS</a>
-            </div>
+        <!-- Lampen - alle zusammengefasst und nach Relaisnummer sortiert -->
+        <h3>💡 Lampen</h3>
+        <div class="card">
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Aussenlampe Garten (R04)</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Steinlampe (R05)</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">� KG Flurlampe (R06): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">� Kuechenarbeitslampe (R07): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Kuechenlampe (R08): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 EG Flurlampe (R09): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Traegerlampen (R10): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleKronleuchter(this)">💡 Kronleuchter (R11): AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">💡 Reserve Wohnzimmer (R12): AUS</a>
         </div>
 
         <!-- Freie Relais -->
         <h3>⚙️ Freie Relais & Sonstiges</h3>
         <div class="card">
-            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔔 Klingeltrafo: AUS</a><br>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">� Relais 13: AUS</a>
+            <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 14: AUS</a>
             <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 15: AUS</a>
             <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 16: AUS</a>
             <a href="#" class="btn btn-off" onclick="toggleLamp(this)">🔌 Relais 17: AUS</a><br>
@@ -312,6 +282,32 @@
                 <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
             </tr>
         </table>
+
+        <!-- Temperature Sensors nach digitalen Eingängen -->
+        <h3>🌡️ Temperatursensoren (3 gefunden)</h3>
+        <table style="margin-bottom:20px;">
+            <tr>
+                <th>Sensor</th>
+                <th>Temperatur</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>DS18B20 #1</td>
+                <td style="color:black;font-weight:bold;">22.5 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+            <tr>
+                <td>DS18B20 #2</td>
+                <td style="color:blue;font-weight:bold;">18.2 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+            <tr>
+                <td>DS18B20 #3</td>
+                <td style="color:red;font-weight:bold;">26.8 °C</td>
+                <td style="color:green;">✓ OK</td>
+            </tr>
+        </table>
+        <p style="font-size:12px;color:gray;">🔄 Update alle 60s | GPIO12 mit 4.7kΩ Pull-up</p>
         
         <br><a href="#" style="color:#2196F3;text-decoration:none;">📶 WiFi Konfiguration</a>
         
@@ -335,6 +331,26 @@
             addSerialOutput(`LED Treppe Helligkeit: ${value}%`);
         }
 
+        // Kronleuchter AC Dimmer Slider
+        function updateKronleuchterBrightness(value) {
+            document.getElementById('kronleuchter-brightness-value').textContent = value + '%';
+            addSerialOutput(`💡 Kronleuchter AC Dimmer: ${value}% (GPIO4)`);
+            
+            // Simuliere Relais-Schaltung
+            const kronleuchterButton = document.querySelector('a[href*="r=11"]');
+            if (kronleuchterButton) {
+                if (value > 0) {
+                    kronleuchterButton.classList.remove('btn-off');
+                    kronleuchterButton.classList.add('btn-on');
+                    kronleuchterButton.innerHTML = `💡 Kronleuchter: EIN (${value}%)`;
+                } else {
+                    kronleuchterButton.classList.remove('btn-on');
+                    kronleuchterButton.classList.add('btn-off');
+                    kronleuchterButton.innerHTML = '💡 Kronleuchter: AUS';
+                }
+            }
+        }
+
         // Lamp Toggle Functionality
         function toggleLamp(button) {
             if (button.classList.contains('btn-off')) {
@@ -347,6 +363,30 @@
                 button.classList.add('btn-off');
                 button.innerHTML = button.innerHTML.replace('EIN', 'AUS');
                 addSerialOutput(`${button.innerHTML.split(':')[0]} → AUS`);
+            }
+        }
+
+        // Kronleuchter Toggle mit Dimmer-Synchronisation
+        function toggleKronleuchter(button) {
+            const slider = document.getElementById('kronleuchterSlider');
+            const brightnessValue = document.getElementById('kronleuchter-brightness-value');
+            
+            if (button.classList.contains('btn-off')) {
+                // EIN → 50% setzen
+                button.classList.remove('btn-off');
+                button.classList.add('btn-on');
+                button.innerHTML = '💡 Kronleuchter: EIN (50%)';
+                slider.value = 50;
+                brightnessValue.textContent = '50%';
+                addSerialOutput('💡 Kronleuchter Toggle → 50% (R11 EIN)');
+            } else {
+                // AUS → 0% setzen
+                button.classList.remove('btn-on');
+                button.classList.add('btn-off');
+                button.innerHTML = '💡 Kronleuchter: AUS';
+                slider.value = 0;
+                brightnessValue.textContent = '0%';
+                addSerialOutput('💡 Kronleuchter Toggle → AUS (R11 AUS)');
             }
         }
 

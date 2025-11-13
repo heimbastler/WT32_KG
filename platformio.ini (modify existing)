@@ -1,0 +1,8 @@
+[env:myenv]
+platform = your_platform
+board = your_board
+framework = arduino
+lib_deps = 
+    unity
+test_build_src = 
+    test/test_main.cpp

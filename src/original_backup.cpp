@@ -1,5 +1,15 @@
 
-//Date: 02.Juni 2017
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                           ORIGINAL BACKUP FILE                              ║
+// ║                          ⚠️  NICHT LÖSCHEN! ⚠️                             ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+//
+// Diese Datei dient als BACKUP der ursprünglichen Implementierung
+// und soll für Referenzzwecke NIEMALS gelöscht werden!
+//
+// Original Date: 02.Juni 2017
+// Backup erstellt: November 2025
+// Zweck: Referenz für TouchBoard-Implementierung und alte Logik
 
 //###################################################
 //#    defines
@@ -1181,4 +1191,3 @@ void set_register(int address, unsigned char r, unsigned char v){
     Wire.write(v);
     Wire.endTransmission();
 }
-

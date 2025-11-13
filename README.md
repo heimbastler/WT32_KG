@@ -6,7 +6,7 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 ## Hardware
 
 ### Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
-<img src="wt32_pinout_large.png" alt="WT32-ETH01 Pinout" width="30%">
+<img src="pictures/wt32_pinout_large.png" alt="WT32-ETH01 Pinout" width="30%">
 
 **Features:**
 - Ethernet-Verbindung über LAN8720 PHY
@@ -17,12 +17,131 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 ### Relais Boards: XL9535-K1V5
 8 Kanal Erweiterungsrelais Modul 5V Netzteil I²C Kommunikation Optokoppler Isolation Board
 
-<img src="Board XL9535-K8V5.png" alt="Relais Board XL9535-K8V5" width="30%">
+here is a very good documentations about this type of boards:
+https://github.com/mcauser/micropython-xl9535-kxv5-relay
+
+<img src="pictures/Board XL9535-K8V5.png" alt="Relais Board XL9535-K8V5" width="30%">
+
+#### Verkabelung: 3x PCA9535 Relais Boards (Daisy Chain)
+
+**I²C-Adressen:**
+- Board A: `0x22` (A1 gelötet, A0+A2 offen)
+- Board B: `0x23` (A1+A0 gelötet, A2 offen)  
+- Board C: `0x24` (A2 gelötet, A0+A1 offen)
+
+**Komplettes Anschlussdiagramm WT32-ETH01 System:**
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                    WT32-ETH01 (ESP32) Smart Home Controller                                      ║
+║                                              Version 1.4                                                         ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+                                           ┌─────────────────────────────────────┐
+                                           │          WT32-ETH01 (ESP32)         │
+                                           │                                     │
+                                           │  GPIO32/SCL ──┬─ [4.7kΩ] ── 3.3V    │
+                                           │  GPIO33/SDA ──┼─ [4.7kΩ] ── 3.3V    │
+                                           │  GPIO12 ──────┼─ 1-Wire Temp        │
+                                           │  GPIO14 ──────┼─ LED Dimmer PWM     │
+                                           │  GPIO17 ──────┼─ Status LED         │
+                                           │  GND ─────────┼─ Common Ground      │
+                                           │  3.3V ────────┼─ Logic Power        │
+                                           └───────────────┼─────────────────────┘
+                                                           │
+                ┌──────────────────────────────────────────┼───────────────────────────────┐
+                │                                    │                                     │
+                │           I²C BUS                  │                                     │
+                │      (SCL/SDA/GND)                 │                                     │
+                │                                    │                                     │
+      ┌─────────┼─────────┐                ┌─────────┼─────────┐                 ┌─────────┼─────────┐
+      │         │         │                │         │         │                 │         │         │
+      │         │         │                │         │         │                 │         │         │
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        PCF8574 INPUT            ┃  ┃         PCA9535 RELAIS          ┃  ┃        MPR121 TOUCH             ┃
+┃                                 ┃  ┃                                 ┃  ┃                                 ┃
+┃  Board 1 (0x20)                 ┃  ┃  Board A (0x22) → R00-R07       ┃  ┃  Panel 1 (0x5A)                 ┃
+┃  ├─ P0: IR-Switch Links         ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Tür Garten EG               ┃
+┃  ├─ P1: IR-Switch Rechts        ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
+┃  ├─ P2-P6: Kreuzschaltungen     ┃  ┃                                 ┃  ┃                                 ┃
+┃  └─ P7: Reserve                 ┃  ┃  Board B (0x23) → R08-R15       ┃  ┃  Panel 2 (0x5C)                 ┃
+┃                                 ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Säule Garten EG             ┃
+┃  Board 2 (0x21)                 ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
+┃  └─ P0-P7: Reserve Eingänge     ┃  ┃                                 ┃  ┃                                 ┃
+┃                                 ┃  ┃  Board C (0x24) → R16-R23       ┃  ┃  Panel 3 (0x5D)                 ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Säule Straße EG             ┃
+                                     ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
+          ┌─ Kabel EG11              ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+          ├─ Kabel EG10                        │                              │
+          ├─ Kabel EG1                         │                              │
+          ├─ Kabel KG1                  ┌─────────────┐              ┌──────────────────┐
+          └─ weitere Schalter           │ 230V Relais │              │ Touch Elektroden │
+                                        │ Verbraucher │              │ kapazitive Pads  │
+                                        └─────────────┘              └──────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           ZUSÄTZLICHE KOMPONENTEN                                                 │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                                   │
+│  GPIO12 ──┬─ DS18B20 Sensor 1 (Raum)         ║  GPIO14 ── MOSFET ── LED Kellertreppe                              │
+│           ├─ DS18B20 Sensor 2 (Boden 1)      ║                                                                    │
+│           ├─ DS18B20 Sensor 3 (Boden 2)      ║  GPIO17 ── Status LED (OnBoard)                                    │
+│           ├─ DS18B20 Sensor 4 (Vorlauf)      ║                                                                    │
+│           └─ DS18B20 Sensor 5 (Rücklauf)     ║  ETH ──── LAN8720 PHY ── RJ45 Netzwerk                             │
+│                                              ║                                                                    │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**I²C-Adressbelegung:**
+```
+┌─────────────┬─────────┬──────────────────────────────────────┐
+│   Adresse   │  Typ    │              Beschreibung            │
+├─────────────┼─────────┼──────────────────────────────────────┤
+│    0x20     │ PCF8574 │ Input Board 1 (Schalter/Taster)      │
+│    0x21     │ PCF8574 │ Input Board 2 (Reserve Eingänge)     │
+│    0x22     │ PCA9535 │ Relais Board A (R00-R07)             │
+│    0x23     │ PCA9535 │ Relais Board B (R08-R15)             │
+│    0x24     │ PCA9535 │ Relais Board C (R16-R23)             │
+│    0x5A     │ MPR121  │ TouchPanel 1 (Tür Garten EG)         │
+│    0x5C     │ MPR121  │ TouchPanel 2 (Säule Garten EG)       │
+│    0x5D     │ MPR121  │ TouchPanel 3 (Säule Straße EG)       │
+└─────────────┴─────────┴──────────────────────────────────────┘
+```
+
+**WT32-ETH01 Pinbelegung:**
+```
+┌─────────┬─────────────┬────────────────────────────────────────┐
+│   Pin   │  Funktion   │               Beschreibung             │
+├─────────┼─────────────┼────────────────────────────────────────┤
+│ GPIO32  │ I²C SCL     │ Clock für alle I²C Geräte + 4.7kΩ PU   │
+│ GPIO33  │ I²C SDA     │ Daten für alle I²C Geräte + 4.7kΩ PU   │
+│ GPIO12  │ 1-Wire      │ DS18B20 Temperatursensoren (5x)        │
+│ GPIO14  │ PWM         │ LED Dimmer Kellertreppe (MOSFET)       │
+│ GPIO17  │ Status LED  │ OnBoard LED (aktiv HIGH)               │
+│ GND     │ Masse       │ Gemeinsame Masse für alle Geräte       │
+│ 3.3V    │ Logic       │ Pullup-Versorgung, kein Board-Power    │
+│ ETH     │ Netzwerk    │ LAN8720 PHY → RJ45 Ethernet            │
+└─────────┴─────────────┴────────────────────────────────────────┘
+```
+
+**Wichtige Hinweise:**
+- **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA) 
+- **4.7kΩ Pullup-Widerstände** nur einmal am WT32-ETH01 (SDA/SCL → 3.3V)
+- **Gemeinsame Masse** zwischen WT32-ETH01 und allen Boards zwingend erforderlich
+- **Kein Pegelwandler** nötig (3.3V Logic kompatibel mit allen Boards)
+- **4-poliger I²C Stecker**: Pin1=GND, Pin2=5V, Pin3=SDA, Pin4=SCL
+- **TouchPanels** benötigen keine separate Versorgung (3.3V über I²C ausreichend)
+
+**Relais-Nummerierung:**
+- Board A (0x22): R00-R07 (Pin 0-7)
+- Board B (0x23): R08-R15 (Pin 0-7)
+- Board C (0x24): R16-R23 (Pin 0-7)
 
 ### Touch Interface
 Kapazitive Touch-Sensoren für intuitive Bedienung
 
-<img src="TouchPad 2+3.png" alt="TouchPad Säule" width="30%">
+<img src="pictures/TouchPad 2+3.png" alt="TouchPad Säule" width="30%">
 
 ## System-Funktionen
 
@@ -110,6 +229,6 @@ Ablauf manuell:
 
 4. Nach dem Flashen: IO0 wieder trennen, Power Cycle für Neustart
 
-<img src="wt32_flash.png" alt="WT32 Flash Setup" width="60%">
+<img src="pictures/wt32_flash.png" alt="WT32 Flash Setup" width="60%">
 
-<img src="UART_CP2102.png" alt="CP2102 UART Adapter" width="60%">
+<img src="pictures/UART_CP2102.png" alt="CP2102 UART Adapter" width="60%">
