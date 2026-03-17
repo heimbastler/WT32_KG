@@ -278,36 +278,66 @@
             </tr>
             <tr>
                 <td>IN7</td>
-                <td>Frei</td>
+                <td>MPR121 IRQ (Wired-OR)</td>
                 <td style="background-color:lightcoral;font-weight:bold;">LOW</td>
+            </tr>
+            <tr>
+                <td>IN8</td>
+                <td>Frei (GPB0)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN9</td>
+                <td>Frei (GPB1)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN10</td>
+                <td>Frei (GPB2)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN11</td>
+                <td>Frei (GPB3)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN12</td>
+                <td>Frei (GPB4)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN13</td>
+                <td>Frei (GPB5)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN14</td>
+                <td>Frei (GPB6)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
+            </tr>
+            <tr>
+                <td>IN15</td>
+                <td>Frei (GPB7)</td>
+                <td style="background-color:lightgray;font-weight:bold;">--</td>
             </tr>
         </table>
 
         <!-- Temperature Sensors nach digitalen Eingängen -->
-        <h3>🌡️ Temperatursensoren (3 gefunden)</h3>
+        <h3>🌡️ Schaltschrank Temperatur</h3>
         <table style="margin-bottom:20px;">
             <tr>
-                <th>Sensor</th>
-                <th>Temperatur</th>
+                <th>Komponente</th>
+                <th>Wert</th>
                 <th>Status</th>
             </tr>
             <tr>
-                <td>DS18B20 #1</td>
-                <td style="color:black;font-weight:bold;">22.5 °C</td>
-                <td style="color:green;">✓ OK</td>
-            </tr>
-            <tr>
-                <td>DS18B20 #2</td>
-                <td style="color:blue;font-weight:bold;">18.2 °C</td>
-                <td style="color:green;">✓ OK</td>
-            </tr>
-            <tr>
-                <td>DS18B20 #3</td>
-                <td style="color:red;font-weight:bold;">26.8 °C</td>
+                <td>DS18B20 Sensor (GPIO12)</td>
+                <td style="color:black;font-weight:bold;">24.3 °C</td>
                 <td style="color:green;">✓ OK</td>
             </tr>
         </table>
-        <p style="font-size:12px;color:gray;">🔄 Update alle 60s | GPIO12 mit 4.7kΩ Pull-up</p>
+        <p style="font-size:12px;color:gray;">🔄 Kontinuierliche Messung | GPIO12 mit 4.7kΩ Pull-up</p>
         
         <br><a href="#" style="color:#2196F3;text-decoration:none;">📶 WiFi Konfiguration</a>
         
@@ -318,7 +348,7 @@
             I2C initialisiert auf GPIO32/33<br>
             Netzwerk: Ethernet verbunden (192.168.1.100)<br>
             TouchBoards initialisiert: 3x MPR121<br>
-            Temperatursensoren: 3 gefunden<br>
+            Temperatursensoren: 1 gefunden (Schaltschrank)<br>
             Webserver gestartet auf Port 80<br>
             <span style="color:#ffff00;">[READY] System bereit für Eingaben</span><br>
         </div>

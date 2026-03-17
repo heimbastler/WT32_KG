@@ -33,16 +33,16 @@
 // 🔸 GPIO4   → AC Dimmer Kronleuchter (PWM, 220V Dimmer)
 // 🔸 GPIO12  → 1-Wire Bus Temperatursensoren (needs 4.7k pullup)
 // 🔸 GPIO14  → LED Dimmer Kellertreppe (PWM, MOSFET Gate)
-// 📡 GPIO32  → I2C SCL (PCF8574, PCA9535, MPR121)
-// 📡 GPIO33  → I2C SDA (PCF8574, PCA9535, MPR121)
+// 📡 GPIO32  → I2C SCL (MCP23017, PCA9535, MPR121)
+// 📡 GPIO33  → I2C SDA (MCP23017, PCA9535, MPR121)
 // 💡 GPIO17  → OnBoard Status LED (aktiv HIGH)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                              I2C GERÄTE                                     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
-// PCF8574 Input Boards:  0x20, 0x21    (Switch Eingänge)
-//   PCF8574 #1 (0x20): Pin 0+1 = IR-Switch Küche EG11, Pin 2-6 = Kreuzschaltungen, Pin 7 = frei
-//   PCF8574 #2 (0x21): Pin 0-7 = frei für weitere Eingänge
+// MCP23017 Input Expander:  0x20    (16 digitale Ein-/Ausgänge für Schalter)
+//   GPA0-GPA7: IR-Switch Küche, Kreuzschaltungen, Reserve
+//   GPB0-GPB7: Reserve Eingänge (8 weitere Pins)
 // PCA9535 Relay Boards:  0x22, 0x23, 0x24 (Relais Ausgänge)
 // MPR121 Touch Sensors:  0x5A, 0x5C, 0x5D  (Capacitive Touch)
 
@@ -65,7 +65,7 @@
 #include <ETH.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include <PCF8574.h> // wieder hinzufügen für die Switches
+#include <Adafruit_MCP23017.h> // 16-Bit GPIO Expander für Eingänge
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
 #include "config.h"
@@ -94,33 +94,32 @@ String getNetworkStatus();
 #define PWM_RESOLUTION 8         // 8-bit Resolution (0-255)
 
 // ---------- 1-Wire Setup für Temperatursensoren ----------
-#define ONE_WIRE_BUS 12      // GPIO12 für DS18B20 Temperatursensoren
+#define ONE_WIRE_BUS 12      // GPIO12 für DS18B20 Temperatursensor (Schaltschrank)
 #define TEMPERATURE_PRECISION 10  // 10-bit = 0.25°C Auflösung
 
-// ---------- PCF8574 Adressen für Switches ----------
-PCF8574 pcfIn1(0x20);    // A2 = GND, A1 = GND, A0 = GND
-PCF8574 pcfIn2(0x21);    // A2 = GND, A1 = GND, A0 = VCC
+// ---------- MCP23017 Adresse für Switches/Eingänge ----------
+Adafruit_MCP23017 mcpIn;  // Adresse 0x20 (Standard) - 16 digitale Ein-/Ausgänge
 
 // ---------- IR-Switch Küche Kabel EG11 ----------
 // Kabel EG11: br/ws = +5V, br = GND, grn = links, grn/ws = rechts
-#define IR_SWITCH_KITCHEN_LEFT  0   // PCF8574 #1 Pin 0 → grn (linker Taster)
-#define IR_SWITCH_KITCHEN_RIGHT 1   // PCF8574 #1 Pin 1 → grn/ws (rechter Taster)
-// Beide Taster gegen br = GND, Pull-up über PCF8574
+#define IR_SWITCH_KITCHEN_LEFT  0   // MCP23017 GPA0 → grn (linker Taster)
+#define IR_SWITCH_KITCHEN_RIGHT 1   // MCP23017 GPA1 → grn/ws (rechter Taster)
+// Beide Taster gegen br = GND, Pull-up über MCP23017
 
 // ---------- Kreuzlichtschaltungen ----------
 // EG Kreuzschaltung (2 Schalter für EG Flurlampe R09)
-#define KREUZ_EG1 2              // PCF8574 #1 Pin 2 → Kabel EG10 (unterer Schalter Treppe OG)
-#define KREUZ_EG2 3              // PCF8574 #1 Pin 3 → Kabel EG1 (oberer Schalter Eingang EG)
+#define KREUZ_EG1 2              // MCP23017 GPA2 → Kabel EG10 (unterer Schalter Treppe OG)
+#define KREUZ_EG2 3              // MCP23017 GPA3 → Kabel EG1 (oberer Schalter Eingang EG)
 // KREUZ_EG3 nicht im Einsatz (war Pin 53 im alten System)
 
 // KG Kreuzschaltung (3 Schalter für KG Flurlampe R06)  
-#define KREUZ_KG1 4              // PCF8574 #1 Pin 4 → Kabel KG1 (Schalter Tür Schlafzimmer, gelb)
-#define KREUZ_KG2 5              // PCF8574 #1 Pin 5 → Kabel KG1 (oberer Schalter Bad KG, weiss)
-#define KREUZ_KG3 6              // PCF8574 #1 Pin 6 → Kabel EG1 (Schalter Treppe zum KG im EG, braun)
+#define KREUZ_KG1 4              // MCP23017 GPA4 → Kabel KG1 (Schalter Tür Schlafzimmer, gelb)
+#define KREUZ_KG2 5              // MCP23017 GPA5 → Kabel KG1 (oberer Schalter Bad KG, weiss)
+#define KREUZ_KG3 6              // MCP23017 GPA6 → Kabel EG1 (Schalter Treppe zum KG im EG, braun)
 
 // ---------- PCA9535 Adressen für Relais ----------
 // Base-Adresse: 0x20, finale Adresse = 0x20 + A2×4 + A1×2 + A0×1
-// KONFLIKT VERMIEDEN: PCF8574 nutzt bereits 0x20,0x21 → PCA9535 ab 0x22
+// KONFLIKT VERMIEDEN: MCP23017 nutzt Adresse 0x20 → PCA9535 ab 0x22
 Adafruit_PCA9535 pcaRel1 = Adafruit_PCA9535(); // RelaisBoard_A: 0x22 → A2=offen, A1=löten, A0=offen
 Adafruit_PCA9535 pcaRel2 = Adafruit_PCA9535(); // RelaisBoard_B: 0x23 → A2=offen, A1=löten, A0=löten
 Adafruit_PCA9535 pcaRel3 = Adafruit_PCA9535(); // RelaisBoard_C: 0x24 → A2=löten, A1=offen, A0=offen
@@ -140,8 +139,8 @@ DallasTemperature temperaturSensoren(&oneWire);
 WebServer server(80);
 
 // ---------- Zustandsspeicher ----------
-uint8_t relayState[24];   // 3 PCFs à 8 Ausgänge
-uint8_t inputState[16];   // 2 PCFs à 8 Eingänge
+uint8_t relayState[24];   // 3 PCA9535 Expander à 8 Ausgänge
+uint8_t inputState[16];   // 1 MCP23017 Expander mit 16 Ein-/Ausgängen (8 verwandt)
 uint8_t ledTreppeBrightness = 0;      // LED Kellertreppe Helligkeit (0-255)
 uint8_t kronleuchterBrightness = 0;   // Kronleuchter AC Dimmer Helligkeit (0-255)
 bool kronleuchterDimmingUp = true;    // Dimm-Richtung für Touch-Steuerung
@@ -156,12 +155,9 @@ uint8_t lastIRSwitchRight = LOW;  // Letzter Zustand rechter Taster
 uint8_t kreuzstateEG = 1;         // EG Kreuzschaltung Zustand (Bit-kombiniert)
 uint8_t kreuzstateKG = 1;         // KG Kreuzschaltung Zustand (Bit-kombiniert)
 
-// ---------- Temperatursensoren Zustand ----------
-float sensorTemperaturen[5];      // Max 5 Temperatursensoren
-float lastSensorTemperaturen[5];  // Letzte Werte für Änderungserkennung
-uint8_t anzahlSensoren = 0;       // Anzahl gefundener Sensoren
-unsigned long lastTempUpdate = 0; // Zeitstempel letzte Messung
-const unsigned long tempUpdateInterval = 60000; // 1 Minute
+// ---------- Temperatursensor Zustand (1x DS18B20 für Schaltschrank) ----------
+float schaltschrankTemp = -999.0;       // Schaltschrank Temperatur (°C)
+float lastSchaltschrankTemp = -999.0;   // Letzte Temperatur für Änderungserkennung
 
 // ---------- Relaisnamen, Index entspricht R00...R23 ----------
 // ACHTUNG: Index 0 = R00, Index 1 = R01, ... Index 22 = R22, Index 23 = R23
@@ -288,19 +284,25 @@ void setup() {
   ArduinoOTA.begin();
   Serial.println("OTA Ready - Hostname: WT32-KG-Controller");
 
-  // PCF8574 Switches starten
-  pcfIn1.begin();
-  pcfIn2.begin();
+  // MCP23017 Input Expander starten
+  if (!mcpIn.begin_I2C(0x20)) {
+    Serial.println("ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
+  } else {
+    Serial.println("MCP23017 initialisiert auf Adresse 0x20");
+  }
 
   // PCA9535 Relais starten
   pcaRel1.begin(0x22); // RelaisBoard_A: A2=offen, A1=löten, A0=offen
   pcaRel2.begin(0x23); // RelaisBoard_B: A2=offen, A1=löten, A0=löten
   pcaRel3.begin(0x24); // RelaisBoard_C: A2=löten, A1=offen, A0=offen
 
-  // Switches als INPUT
+  // Switches als INPUT (MCP23017 Port A: GPA0-GPA7)
   for (int i = 0; i < 8; i++) {
-    pcfIn1.pinMode(i, INPUT);
-    pcfIn2.pinMode(i, INPUT);
+    mcpIn.pinMode(i, INPUT);
+  }
+  // MCP23017 Port B: GPB0-GPB7 als Reserve Eingänge
+  for (int i = 8; i < 16; i++) {
+    mcpIn.pinMode(i, INPUT);
   }
 
   // Relais als OUTPUT und alle AUS (HIGH)
@@ -349,10 +351,10 @@ void loop() {
   // Netzwerk Events überwachen
   handleWiFiEvents();
 
-  // Eingänge lesen (weiterhin über PCF8574)
+  // Eingänge lesen (über MCP23017 Port A und B)
   for (int i = 0; i < 8; i++) {
-    inputState[i] = pcfIn1.digitalRead(i);
-    inputState[i + 8] = pcfIn2.digitalRead(i);
+    inputState[i] = mcpIn.digitalRead(i);      // Port A: GPA0-GPA7
+    inputState[i + 8] = mcpIn.digitalRead(i + 8);  // Port B: GPB0-GPB7
   }
 
   // Touch Events verarbeiten
@@ -935,75 +937,71 @@ void dimKronleuchter(bool dimUp) {
 }
 
 // ======================================================
-// 1-Wire Temperatursensor Funktionen
+// 1-Wire Temperatursensor Funktionen (1x DS18B20 für Schaltschrank)
 // ======================================================
 void initTemperatureSensors() {
   temperaturSensoren.begin();
-  anzahlSensoren = temperaturSensoren.getDeviceCount();
-  Serial.println("1-Wire Temperatursensoren initialisiert");
-  Serial.println("Anzahl gefundener Sensoren: " + String(anzahlSensoren));
+  uint8_t sensorCount = temperaturSensoren.getDeviceCount();
   
-  // Auflösung für alle Sensoren setzen
-  for (uint8_t i = 0; i < anzahlSensoren && i < 5; i++) {
+  Serial.println("1-Wire Temperatursensor initialisiert");
+  Serial.println("Sensoren gefunden: " + String(sensorCount));
+  
+  if (sensorCount > 0) {
     DeviceAddress tempDeviceAddress;
-    if (temperaturSensoren.getAddress(tempDeviceAddress, i)) {
+    if (temperaturSensoren.getAddress(tempDeviceAddress, 0)) {
       temperaturSensoren.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
+      Serial.println("DS18B20 Sensor konfiguriert (Schaltschrank)");
     }
-    sensorTemperaturen[i] = -999.0;
-    lastSensorTemperaturen[i] = -999.0;
+  } else {
+    Serial.println("WARNUNG: Kein DS18B20 Sensor gefunden!");
   }
+  
+  schaltschrankTemp = -999.0;
+  lastSchaltschrankTemp = -999.0;
 }
 
 void updateTemperatures() {
-  if (anzahlSensoren == 0) return;
-  
   temperaturSensoren.requestTemperatures();
   delay(100); // Kurz warten für Messung
   
-  for (uint8_t i = 0; i < anzahlSensoren && i < 5; i++) {
-    float temp = temperaturSensoren.getTempCByIndex(i);
-    
-    if (temp != DEVICE_DISCONNECTED_C) {
-      // Nur bei Änderung um mindestens 0.1°C aktualisieren
-      if (abs(temp - lastSensorTemperaturen[i]) >= 0.1) {
-        lastSensorTemperaturen[i] = sensorTemperaturen[i];
-        sensorTemperaturen[i] = temp;
-        Serial.println("Sensor " + String(i) + ": " + String(temp, 1) + "°C");
-      }
-    } else {
-      sensorTemperaturen[i] = -999.0; // Fehlercode für nicht angeschlossen
+  float temp = temperaturSensoren.getTempCByIndex(0);
+  
+  if (temp != DEVICE_DISCONNECTED_C) {
+    // Nur bei Änderung um mindestens 0.1°C aktualisieren
+    if (abs(temp - lastSchaltschrankTemp) >= 0.1) {
+      lastSchaltschrankTemp = schaltschrankTemp;
+      schaltschrankTemp = temp;
+      Serial.println("Schaltschrank Temperatur: " + String(temp, 1) + "°C");
     }
+  } else {
+    schaltschrankTemp = -999.0; // Fehlercode für nicht angeschlossen
+    Serial.println("FEHLER: DS18B20 Sensor nicht erreichbar!");
   }
 }
 
 String getTemperatureHTML() {
-  if (anzahlSensoren == 0) {
-    return "<h3>🌡️ Temperatursensoren</h3><p style='color:orange;'>Keine 1-Wire Sensoren gefunden (GPIO12)</p>";
-  }
-  
-  String html = "<h3>🌡️ Temperatursensoren (" + String(anzahlSensoren) + " gefunden)</h3>";
+  String html = "<h3>🌡️ Schaltschrank Temperatur</h3>";
   html += "<table style='margin-bottom:20px;'><tr>";
-  html += "<th>Sensor</th><th>Temperatur</th><th>Status</th></tr>";
+  html += "<th>Komponente</th><th>Wert</th><th>Status</th></tr>";
   
-  for (uint8_t i = 0; i < anzahlSensoren && i < 5; i++) {
-    html += "<tr>";
-    html += "<td>DS18B20 #" + String(i + 1) + "</td>";
+  html += "<tr>";
+  html += "<td>DS18B20 Sensor (GPIO12)</td>";
+  
+  if (schaltschrankTemp != -999.0) {
+    String tempColor = "black";
+    if (schaltschrankTemp < 10) tempColor = "blue";
+    else if (schaltschrankTemp > 35) tempColor = "red";
+    else if (schaltschrankTemp > 30) tempColor = "orange";
     
-    if (sensorTemperaturen[i] != -999.0) {
-      String tempColor = "black";
-      if (sensorTemperaturen[i] < 10) tempColor = "blue";
-      else if (sensorTemperaturen[i] > 25) tempColor = "red";
-      
-      html += "<td style='color:" + tempColor + ";font-weight:bold;'>" + String(sensorTemperaturen[i], 1) + " °C</td>";
-      html += "<td style='color:green;'>✓ OK</td>";
-    } else {
-      html += "<td style='color:gray;'>-- °C</td>";
-      html += "<td style='color:red;'>✗ Fehler</td>";
-    }
-    html += "</tr>";
+    html += "<td style='color:" + tempColor + ";font-weight:bold;'>" + String(schaltschrankTemp, 1) + " °C</td>";
+    html += "<td style='color:green;'>✓ OK</td>";
+  } else {
+    html += "<td style='color:gray;'>-- °C</td>";
+    html += "<td style='color:red;'>✗ Fehler</td>";
   }
+  html += "</tr>";
   html += "</table>";
-  html += "<p style='font-size:12px;color:gray;'>🔄 Update alle 60s | GPIO12 mit 4.7kΩ Pull-up</p>";
+  html += "<p style='font-size:12px;color:gray;'>🔄 Kontinuierliche Messung | GPIO12 mit 4.7kΩ Pull-up</p>";
   
   return html;
 }
@@ -1013,8 +1011,8 @@ String getTemperatureHTML() {
 // ======================================================
 void handleIRSwitchKitchen() {
   // Aktuelle Zustände der beiden Taster lesen
-  uint8_t currentLeftSwitch = inputState[IR_SWITCH_KITCHEN_LEFT];   // PCF8574 #1 Pin 0
-  uint8_t currentRightSwitch = inputState[IR_SWITCH_KITCHEN_RIGHT]; // PCF8574 #1 Pin 1
+  uint8_t currentLeftSwitch = inputState[IR_SWITCH_KITCHEN_LEFT];   // MCP23017 GPA0
+  uint8_t currentRightSwitch = inputState[IR_SWITCH_KITCHEN_RIGHT]; // MCP23017 GPA1
   
   // Linker Taster: Flanke LOW → HIGH (Taster gedrückt)
   if (currentLeftSwitch == HIGH && lastIRSwitchLeft == LOW) {

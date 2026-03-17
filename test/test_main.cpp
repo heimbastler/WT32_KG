@@ -4,12 +4,14 @@
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 //
 // Test für 3x PCA9535 16-Bit I/O Expander Relais Boards
-// - Board A: 0x20 (Default Adresse - alle Adress-Pads offen)
-// - Board B: 0x21 (A0 gelötet)  
-// - Board C: 0x22 (A1 gelötet)
+// - Board A: 0x22 (A1 gelötet, A0+A2 offen)
+// - Board B: 0x23 (A1+A0 gelötet, A2 offen)  
+// - Board C: 0x24 (A2 gelötet, A0+A1 offen)
 //
 // Jedes Board hat 16 Pins, aber nur 8 Relais angeschlossen (Pin 0-7)
 // Pin 8-15 sind als Eingänge oder Reserve verfügbar
+// 
+// HINWEIS: I2C Adresse 0x20 wird von MCP23017 Input Expander verwendet!
 
 #include "unity.h"
 #include <Arduino.h>
@@ -23,8 +25,8 @@
 // ---------- PCA9535 Test Board Definitionen ----------
 Adafruit_PCA9535 testBoard;  // Wird für jedes Board neu initialisiert
 
-// Test Board Adressen - KORRIGIERT nach main.cpp!
-// ACHTUNG: 0x20, 0x21 bereits von PCF8574 Input Boards belegt!
+// Test Board Adressen
+// ACHTUNG: 0x20 bereits von MCP23017 Input Expander belegt!
 const uint8_t BOARD_ADDRESSES[] = {0x22, 0x23, 0x24};  // PCA9535 Relais Board Adressen
 const char* BOARD_NAMES[] = {"Board_A", "Board_B", "Board_C"};
 const uint8_t NUM_BOARDS = 3;
@@ -231,7 +233,7 @@ void test_manual_interactive() {
     Serial.println("- Board B mit A1+A0 gelötet: 0x23");
     Serial.println("- Board C mit A2 gelötet: 0x24");
     Serial.println("");
-    Serial.println("HINWEIS: 0x20, 0x21 sind bereits von PCF8574 Input Boards belegt!");
+    Serial.println("HINWEIS: 0x20 ist bereits vom MCP23017 Input Expander belegt!");
     
     TEST_PASS_MESSAGE("Manueller Test-Hinweis angezeigt");
 }

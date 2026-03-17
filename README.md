@@ -1,11 +1,11 @@
 # WT32_KG - Smart Home Controller
 
-## Beschreibung
+## 📋 Beschreibung
 Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP32)** Mikrocontroller. Das System steuert verschiedene Haushaltsgeräte wie Lampen, Rollos und andere elektrische Verbraucher über I²C-Relaismodule und kapazitive Touch-Sensoren.
 
-## Hardware
+## ⚙️ Hardware
 
-### Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
+### 🖥️ Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
 <img src="pictures/wt32_pinout_large.png" alt="WT32-ETH01 Pinout" width="30%">
 
 **Features:**
@@ -14,7 +14,7 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 - Integrierte WiFi-Funktionalität
 - 240MHz Dual-Core Prozessor
 
-### Relais Boards: XL9535-K1V5
+### 🔌 Relais Boards: XL9535-K1V5
 8 Kanal Erweiterungsrelais Modul 5V Netzteil I²C Kommunikation Optokoppler Isolation Board
 
 here is a very good documentations about this type of boards:
@@ -29,68 +29,139 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 - Board B: `0x23` (A1+A0 gelötet, A2 offen)  
 - Board C: `0x24` (A2 gelötet, A0+A1 offen)
 
+### 📥 Input Expander: MCP23017 (1x 16-Bit GPIO)
+16-Bit I/O Expander für digitale Eingänge (Schalter, Taster, Kreuzschaltungen) und Reserve-Ausgänge
+
+<img src="pictures/CJMCU-2317_01.jpg" alt="MCP23017 Board - Vorderseite" width="20%">
+<img src="pictures/CJMCU-2317_02.jpg" alt="MCP23017 Board - Rückseite" width="20%">
+<img src="pictures/CJMCU-2317_03.jpg" alt="MCP23017 Board - Pinout" width="30%">
+
+#### MCP23017 Pin-Belegung
+
+**I²C-Adresse:** `0x20` (Standard - A2, A1, A0 alle auf GND)
+
+**Port A (GPA0-GPA7) - Schalter/Taster:**
+- `GPA0`: IR-Switch Küche EG11 - Linker Taster (Input mit Pull-Up)
+- `GPA1`: IR-Switch Küche EG11 - Rechter Taster (Input mit Pull-Up)
+- `GPA2`: Kreuzschaltung EG1 - Taster Treppe OG (Input mit Pull-Up)
+- `GPA3`: Kreuzschaltung EG2 - Taster Eingang EG (Input mit Pull-Up)
+- `GPA4`: Kreuzschaltung KG1 - Taster Tür Schlafzimmer (Input mit Pull-Up)
+- `GPA5`: Kreuzschaltung KG2 - Taster Bad KG (Input mit Pull-Up)
+- `GPA6`: Kreuzschaltung KG3 - Taster Treppe KG-EG (Input mit Pull-Up)
+- `GPA7`: MPR121 Touch Interrupt (IRQ-Signale aller 3 Touchboards mit **Wired-OR** gekoppelt über Level Shifter)
+
+**Port B (GPB0-GPB7) - Reserve:**
+- `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
+
+⚠️ **WICHTIG - Level Shifter erforderlich!**
+Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der MCP23017 mit **3.3V Logik**.
+- **Alle 3 IRQ-Leitungen werden mit Wired-OR kombiniert** auf GPA7 → nur 1 physikalische Leitung zum MCP23017
+- **Ein bidirektionaler Level Shifter ist ZWINGEND erforderlich** (z.B. TXB0108, PCA9306) für:
+  - **SCL**: 3.3V → 5V (Output WT32 → Input Touchboards)
+  - **SDA**: bidirektional 3.3V ↔ 5V
+  - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input MCP23017)
+- **OHNE Level Shifter**: 5V-Signale beschädigen die 3.3V-Eingänge des MCP23017!
+
+**Spezifikationen:**
+- 16 digitale Ein-/Ausgänge mit individueller Konfiguration
+- I²C Interface (GPIO32/SCL, GPIO33/SDA)
+- 3.3V Logik-Versorgung über I²C Bus
+- Interner Pull-Up für Input-Pins verfügbar
+- Interrupt-Fähig für Edge-Detection
+
 **Komplettes Anschlussdiagramm WT32-ETH01 System:**
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-║                                    WT32-ETH01 (ESP32) Smart Home Controller                                      ║
-║                                              Version 1.4                                                         ║
-╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                               WT32-ETH01 (ESP32) Smart Home Controller mit Level Shifter                                       ║
+║                                                    Version 1.4                                                                 ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 
-                                           ┌─────────────────────────────────────┐
-                                           │          WT32-ETH01 (ESP32)         │
-                                           │                                     │
-                                           │  GPIO32/SCL ──┬─ [4.7kΩ] ── 3.3V    │
-                                           │  GPIO33/SDA ──┼─ [4.7kΩ] ── 3.3V    │
-                                           │  GPIO12 ──────┼─ 1-Wire Temp        │
-                                           │  GPIO14 ──────┼─ LED Dimmer PWM     │
-                                           │  GPIO17 ──────┼─ Status LED         │
-                                           │  GND ─────────┼─ Common Ground      │
-                                           │  3.3V ────────┼─ Logic Power        │
-                                           └───────────────┼─────────────────────┘
-                                                           │
-                ┌──────────────────────────────────────────┼───────────────────────────────┐
-                │                                    │                                     │
-                │           I²C BUS                  │                                     │
-                │      (SCL/SDA/GND)                 │                                     │
-                │                                    │                                     │
-      ┌─────────┼─────────┐                ┌─────────┼─────────┐                 ┌─────────┼─────────┐
-      │         │         │                │         │         │                 │         │         │
-      │         │         │                │         │         │                 │         │         │
+                                          ┌─────────────────────────────────────┐
+                                          │         WT32-ETH01 (ESP32)          │
+                                          │                                     │
+                                          │  GPIO32/SCL ──┬─ [4.7kΩ] ── 3.3V    │
+                                          │  GPIO33/SDA ──┼─ [4.7kΩ] ── 3.3V    │
+                                          │  GPIO12 ──────┼─ 1-Wire Temp        │
+                                          │  GPIO14 ──────┼─ LED Dimmer PWM     │
+                                          │  GPIO17 ──────┼─ Status LED         │
+                                          │  GND ─────────┼─ Common Ground      │
+                                          │  3.3V ────────┼─ Logic Power (3.3V) │
+                                          └───────┬───────┴──┬──────────────────┘
+                                                  │          │
+                                           ┌──────┴──────────┴──────────┐
+                                           │  I²C: SCL (3.3V output)    │
+                                           │  I²C: SDA (3.3V bidir.)    │
+                                           │  IRQ: GPA7 (3.3V input)    │
+                                           └──────────┬─────────────────┘
+                                                      │
+                        ┌─────────────────────────────┼────────────────────────────┐
+                        │                             │                            │
+                        │                             │            ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+                        │                             │            ┃  LEVEL SHIFTER (TXB0108 oder ähnl.)    ┃
+                        │                             │            ┃  ┌────────────────────────────────┐    ┃
+                        │                             │            ┃  │  3.3V Side  ↔  5V Side         │    ┃
+                        │                             │            ┃  ├────────────────────────────────┤    ┃
+                        │                             │            ┃  │  SCL_out ──┐  ┌─── SCL_in      │    ┃
+                        │                             ┃            ┃  ┃  SDA  ◄────┼──┼─►  SDA         │    ┃
+                        │                  ┏━━━━━━━━━━┼━━━━━━━━━━━━┼━━┼━ IRQ_out ◄─┼──┼─── IRQ_in ◄━━━━┼━━━━┼━━━━━━━━┓
+                        │                  │          │            ┃  │            │  │    (Wired-OR)  │    ┃        ┃
+                        │                  │          │            ┃  │  GND ──────┴──┴─── GND         │    ┃        ┃
+                        │                  │          │            ┃  └────────────────────────────────┘    ┃        ┃
+                        │                  │          │            ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛        ┃
+                        │                  │          │                             │                                ┃
+                        │                  │          │                ┌────────────────────────────┐                ┃
+                        │                  │          │                │            │               │                ┃
+                        │                  │          │                │        5V I²C Bus          │                ┃
+                        │                  │          │                │            │               │                ┃
+                        │                  │          │                │            │               │                ┃
+                                           │          │                │            │               │                ┃
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓        │          │    ┏━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━┓  ┃
+┃        MCP23017 INPUT           ┃        │          │    │ MPR121 TOUCH   ┃  │ MPR121 TOUCH  ┃  ┃ MPR121 TOUCH  ┃  ┃
+┃    (0x20) - 3.3V Logic          ┃        │          │    │ Panel 1 (0x5A) ┃  │ Panel 2(0x5C) ┃  ┃ Panel 3(0x5D) ┃  ┃
+┃                                 ┃        │          │    │ 5V Logic       ┃  │ 5V Logic      ┃  ┃ 5V Logic      ┃  ┃
+┃  Port A (GPA0-GPA7):            ┃        │          │    │ SCL/SDA/GND    ┃  │ SCL/SDA/GND   ┃  ┃ SCL/SDA/GND   ┃  ┃
+┃  ├─ GPA0: IR-Switch Links       ┃        │          │    │ IRQ (Pin X)─►──────►IRQ (Pin X)─►─────►IRQ (Pin X)─►────┘
+┃  ├─ GPA1: IR-Switch Rechts      ┃        │          │    │ 12x Touch Pads ┃  │ 12x Pads      ┃  ┃ 12x Pads      ┃
+┃  ├─ GPA2: Kreuz EG1             ┃        │          │    │                ┃  │               ┃  ┃               ┃
+┃  ├─ GPA3: Kreuz EG2             ┃        │          │    │ Tür Garten EG  ┃  │ Säule Garten  ┃  ┃ Säule Straße  ┃
+┃  ├─ GPA4: Kreuz KG1             ┃        │          │    │                ┃  │ EG            ┃  ┃ EG            ┃
+┃  ├─ GPA5: Kreuz KG2             ┃        │          │    └────────────────┘  └───────────────┘  └───────────────┘
+┃  ├─ GPA6: Kreuz KG3             ┃        │          │
+┃  └─ GPA7: MPR121 IRQ (Wired-OR) ◄────────┘          │
+┃  (alle 3 IRQs kombiniert)       ┃                   │
+┃                                 ┃                   │
+┃  Port B (GPB0-GPB7) - Reserve:  ┃                   │
+┃  ├─ GPB0-GPB7: N/C              ┃                   │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                   │
+      │                                               │
+      ├─ Kabel EG11                                   │
+      ├─ Kabel EG10                                   │
+      ├─ Kabel EG1                                    │
+      ├─ Kabel KG1                                    │
+      └─ weitere Schalter                             │
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        PCF8574 INPUT            ┃  ┃         PCA9535 RELAIS          ┃  ┃        MPR121 TOUCH             ┃
+┃      PCA9535 RELAIS (Board A)   ┃  ┃   PCA9535 RELAIS (Board B)      ┃  ┃   PCA9535 RELAIS (Board C)      ┃
+┃    (0x22) - 3.3V I²C Logic      ┃  ┃ (0x23) - 3.3V I²C Logic         ┃  ┃ (0x24) - 3.3V I²C Logic         ┃
 ┃                                 ┃  ┃                                 ┃  ┃                                 ┃
-┃  Board 1 (0x20)                 ┃  ┃  Board A (0x22) → R00-R07       ┃  ┃  Panel 1 (0x5A)                 ┃
-┃  ├─ P0: IR-Switch Links         ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Tür Garten EG               ┃
-┃  ├─ P1: IR-Switch Rechts        ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
-┃  ├─ P2-P6: Kreuzschaltungen     ┃  ┃                                 ┃  ┃                                 ┃
-┃  └─ P7: Reserve                 ┃  ┃  Board B (0x23) → R08-R15       ┃  ┃  Panel 2 (0x5C)                 ┃
-┃                                 ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Säule Garten EG             ┃
-┃  Board 2 (0x21)                 ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
-┃  └─ P0-P7: Reserve Eingänge     ┃  ┃                                 ┃  ┃                                 ┃
-┃                                 ┃  ┃  Board C (0x24) → R16-R23       ┃  ┃  Panel 3 (0x5D)                 ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ Säule Straße EG             ┃
-                                     ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 12x Touch Elektroden        ┃
-          ┌─ Kabel EG11              ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-          ├─ Kabel EG10                        │                              │
-          ├─ Kabel EG1                         │                              │
-          ├─ Kabel KG1                  ┌─────────────┐              ┌──────────────────┐
-          └─ weitere Schalter           │ 230V Relais │              │ Touch Elektroden │
-                                        │ Verbraucher │              │ kapazitive Pads  │
-                                        └─────────────┘              └──────────────────┘
+┃  Ausgänge: R00-R07              ┃  ┃  Ausgänge: R08-R15              ┃  ┃  Ausgänge: R16-R23              ┃
+┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃
+┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 5V Extern (100mA)           ┃
+┃                                 ┃  ┃                                 ┃  ┃                                 ┃
+┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                           ZUSÄTZLICHE KOMPONENTEN                                                 │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                                   │
-│  GPIO12 ──┬─ DS18B20 Sensor 1 (Raum)         ║  GPIO14 ── MOSFET ── LED Kellertreppe                              │
-│           ├─ DS18B20 Sensor 2 (Boden 1)      ║                                                                    │
-│           ├─ DS18B20 Sensor 3 (Boden 2)      ║  GPIO17 ── Status LED (OnBoard)                                    │
-│           ├─ DS18B20 Sensor 4 (Vorlauf)      ║                                                                    │
-│           └─ DS18B20 Sensor 5 (Rücklauf)     ║  ETH ──── LAN8720 PHY ── RJ45 Netzwerk                             │
-│                                              ║                                                                    │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           LAN8720 PHY - RESERVIERTE GPIO PINS                                                    │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                                                  │
+│  GPIO18: ETH_MDIO       ║  GPIO19: ETH_TXD0      ║  GPIO21: ETH_CLK_OUT  ║  GPIO22: ETH_RXD0                                     │
+│  GPIO23: ETH_MDC        ║  GPIO25: ETH_TX_EN     ║  GPIO26: ETH_RX_ER    ║  GPIO27: ETH_CRS_DV                                   │
+│                                                                                                                                  │
+│       DIESE PINS DÜRFEN NICHT FÜR ANDERE FUNKTIONEN GENUTZT WERDEN!                                                              │
+│                                                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **I²C-Adressbelegung:**
@@ -98,8 +169,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 ┌─────────────┬─────────┬──────────────────────────────────────┐
 │   Adresse   │  Typ    │              Beschreibung            │
 ├─────────────┼─────────┼──────────────────────────────────────┤
-│    0x20     │ PCF8574 │ Input Board 1 (Schalter/Taster)      │
-│    0x21     │ PCF8574 │ Input Board 2 (Reserve Eingänge)     │
+│    0x20     │ MCP23017│ I/O Expander (Schalter/Reserve)      │
 │    0x22     │ PCA9535 │ Relais Board A (R00-R07)             │
 │    0x23     │ PCA9535 │ Relais Board B (R08-R15)             │
 │    0x24     │ PCA9535 │ Relais Board C (R16-R23)             │
@@ -111,39 +181,81 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 
 **WT32-ETH01 Pinbelegung:**
 ```
-┌─────────┬─────────────┬────────────────────────────────────────┐
-│   Pin   │  Funktion   │               Beschreibung             │
-├─────────┼─────────────┼────────────────────────────────────────┤
-│ GPIO32  │ I²C SCL     │ Clock für alle I²C Geräte + 4.7kΩ PU   │
-│ GPIO33  │ I²C SDA     │ Daten für alle I²C Geräte + 4.7kΩ PU   │
-│ GPIO12  │ 1-Wire      │ DS18B20 Temperatursensoren (5x)        │
-│ GPIO14  │ PWM         │ LED Dimmer Kellertreppe (MOSFET)       │
-│ GPIO17  │ Status LED  │ OnBoard LED (aktiv HIGH)               │
-│ GND     │ Masse       │ Gemeinsame Masse für alle Geräte       │
-│ 3.3V    │ Logic       │ Pullup-Versorgung, kein Board-Power    │
-│ ETH     │ Netzwerk    │ LAN8720 PHY → RJ45 Ethernet            │
-└─────────┴─────────────┴────────────────────────────────────────┘
+┌─────────┬──────────────┬────────────────────────────────────────────┐
+│   Pin   │   Funktion   │               Beschreibung                 │
+├─────────┼──────────────┼────────────────────────────────────────────┤
+│ GPIO04  │ PWM          │ AC Dimmer Kronleuchter 220V (GPIO4)         │
+│ GPIO12  │ 1-Wire       │ DS18B20 Temperatursensor (Schaltschrank)   │
+│ GPIO14  │ PWM          │ LED Dimmer Kellertreppe (MOSFET)           │
+│ GPIO17  │ Status LED   │ OnBoard LED (aktiv HIGH)                   │
+│ GPIO32  │ I²C SCL      │ Clock für alle I²C Geräte + 4.7kΩ PU       │
+│ GPIO33  │ I²C SDA      │ Daten für alle I²C Geräte + 4.7kΩ PU       │
+├─────────┼──────────────┼────────────────────────────────────────────┤
+│GPIO18   │ ETH_MDIO     │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO19  │ ETH_TXD0     │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO21  │ ETH_CLK_OUT  │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO22  │ ETH_RXD0     │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO23  │ ETH_MDC      │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO25  │ ETH_TX_EN    │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO26  │ ETH_RX_ER    │ LAN8720 PHY (reserviert - nicht frei!)     │
+│ GPIO27  │ ETH_CRS_DV   │ LAN8720 PHY (reserviert - nicht frei!)     │
+├─────────┼──────────────┼────────────────────────────────────────────┤
+│ GPIO01  │ TX0/UART0    │ Serial Debug (Flash/Upload - zum PC)       │
+│ GPIO03  │ RX0/UART0    │ Serial Debug (Flash/Upload - vom PC)       │
+│ GPIO16  │ RX2/UART2    │ Alternative UART (optional verfügbar)      │
+│ GPIO17  │ TX2/UART2    │ Konflikt mit Status LED - NICHT NUTZBAR!   │
+├─────────┼──────────────┼────────────────────────────────────────────┤
+│ GND     │ Masse        │ Gemeinsame Masse für alle Geräte           │
+│ 3.3V    │ Logic        │ Pullup-Versorgung, kein Board-Power        │
+│ ETH     │ Netzwerk     │ LAN8720 PHY → RJ45 Ethernet (8 Pins oben)  │
+└─────────┴──────────────┴────────────────────────────────────────────┘
 ```
 
 **Wichtige Hinweise:**
-- **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA) 
-- **4.7kΩ Pullup-Widerstände** nur einmal am WT32-ETH01 (SDA/SCL → 3.3V)
-- **Gemeinsame Masse** zwischen WT32-ETH01 und allen Boards zwingend erforderlich
-- **Kein Pegelwandler** nötig (3.3V Logic kompatibel mit allen Boards)
-- **4-poliger I²C Stecker**: Pin1=GND, Pin2=5V, Pin3=SDA, Pin4=SCL
-- **TouchPanels** benötigen keine separate Versorgung (3.3V über I²C ausreichend)
+- **Bi-direktionaler Level Shifter ERFORDERLICH** (z.B. TXB0108, PCA9306):
+  - SCL: 3.3V Output (WT32) → 5V Input (Touchboards)
+  - SDA: Bidirektional 3.3V ↔ 5V
+  - IRQ: 5V Output (Wired-OR der 3 Touchboards) → 3.3V Input (MCP23017/GPA7)
+- **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA)
+- **5V Versorgung** für alle MPR121 Touchboards (über Level Shifter Versorgung oder separate 5V Rail)
+- **4.7kΩ Pullup-Widerstände** am WT32-ETH01 Seite (SDA/SCL zu 3.3V) - auf 3.3V Seite des Level Shifters
+- **5V Pullup-Widerstände** auf dem Level Shifter 5V-Seite (für Touchboard-Versorgung)
+- **Gemeinsame Masse (GND)** zwischen WT32-ETH01, Level Shifter und allen Boards zwingend erforderlich
+- **Kabel:** Shielded 0.25mm² für I²C Signalleitungen (SCL/SDA/IRQ)
+- **TouchPanels** benötigen 5V Versorgung + I²C Anschluss
+
+**UART Adapter Verbindung (zum Debuggen/Flashen):**
+- **GPIO01 (TX0)** → CP2102/TTL Adapter RXD Pin
+- **GPIO03 (RX0)** → CP2102/TTL Adapter TXD Pin
+- **GND** → CP2102/TTL Adapter GND Pin
+- **3.3V** → CP2102/TTL Adapter 3.3V Pin (optional, für Stromversorgung)
+- ⚠️ **GPIO01/GPIO03 sind Boot-Strapping-Pins** - Vorsicht beim Anschluss!
+- **Alternative:** UART2 (GPIO16/GPIO17) nicht nutzbar - GPIO17 ist Status LED
 
 **Relais-Nummerierung:**
 - Board A (0x22): R00-R07 (Pin 0-7)
 - Board B (0x23): R08-R15 (Pin 0-7)
 - Board C (0x24): R16-R23 (Pin 0-7)
 
-### Touch Interface
-Kapazitive Touch-Sensoren für intuitive Bedienung
+### 👆 Touch Interface
+Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik**)
 
 <img src="pictures/TouchPad 2+3.png" alt="TouchPad Säule" width="30%">
 
-## System-Funktionen
+**Wichtige Hinweise zu den MPR121 Touchboards:**
+- **I²C Logik: 5V Level** (kompatibel mit den Relais-Board 5V Versorgung)
+- **IRQ Signal: 5V Level** (aktiv LOW bei Touch-Erkennung)
+- **Alle 3 Boards werden auf EINER I²C-Adressenleitung montiert** (Daisy-Chain I²C)
+- **Alle 3 IRQ-Ausgänge werden zu einer Wired-OR Leitung kombiniert** → GPA7 des MCP23017 über Level Shifter
+- ⚠️ **Level Shifter zwingend erforderlich**: 5V Signal darf nicht direkt auf 3.3V-Eingänge des MCP23017 gelegt werden!
+
+**Die 3 IRQ-Leitungen können zusammengefasst werden weil:**
+- Alle IRQ-Ausgänge sind aktiv LOW (Open-Drain)
+- Wired-OR: Wenn EINE der 3 Touchboards einen Touch erkennt, wird GPA7 auf LOW gezogen
+- Das Code-Interrupt-Handler liest dann, welches Board den Interrupt ausgelöst hat, über die I²C-Adresse
+- Resultat: Nur 1 physikalische IRQ-Leitung statt 3 erforderlich
+
+## 🎛️ System-Funktionen
 
 ### 🏠 Beleuchtungssteuerung
 - **[Außenlampe Garten](src/main.cpp#L298)** - Gartenbeleuchtung (R04)
@@ -154,6 +266,12 @@ Kapazitive Touch-Sensoren für intuitive Bedienung
 - **[EG Flurlampe](src/main.cpp#L333)** - Erdgeschoss Flurbeleuchtung (R09)
 - **[Trägerlampen](src/main.cpp#L340)** - Strukturbeleuchtung (R10)
 - **[Wohnzimmerlampe 1](src/main.cpp#L347) & [2](src/main.cpp#L354)** - Wohnzimmerbeleuchtung (R11, R12)
+
+### 💡 PWM Dimmer (LED & AC)
+- **[LED Dimmer Kellertreppe](src/main.cpp#L348)** - GPIO14, MOSFET-gesteuert, 0-100% Helligkeit
+- **[AC Dimmer Kronleuchter](src/main.cpp#L349)** - GPIO4, 220V AC-Dimmer, 0-100% Helligkeit (R11)
+  - Kurzer Touch: EIN/AUS toggle
+  - Langer Touch: Kontinuierliches Dimmen up/down
 
 ### 🎚️ Rollladensteuerung
 - **[Fensterrollo hoch](src/main.cpp#L261) / [runter](src/main.cpp#L270)** - Automatische Auf/Ab-Steuerung mit Zeitbegrenzung (60s)
@@ -174,7 +292,7 @@ Kapazitive Touch-Sensoren für intuitive Bedienung
 
 ### ⚡ Hardware-Interface
 - **[3x PCA9535](src/main.cpp#L57)** I²C GPIO-Expander für 24 Relais-Ausgänge
-- **[2x PCF8574](src/main.cpp#L52)** I²C GPIO-Expander für 16 digitale Eingänge
+- **[1x MCP23017](src/main.cpp#L52)** I²C GPIO-Expander für 16 digitale Ein-/Ausgänge
 - **[I²C Bus](src/main.cpp#L47)** auf GPIO32 (SCL) und GPIO33 (SDA)
 
 ### 🔧 Technische Features
@@ -184,7 +302,7 @@ Kapazitive Touch-Sensoren für intuitive Bedienung
 - **[Gruppensteuerung](src/main.cpp#L374)** mehrerer Lampen gleichzeitig
 - **[Fail-Safe Initialisierung](src/main.cpp#L155)** aller Relais im AUS-Zustand
 
-## Webserver-Bedienung
+## 🌐 Webserver-Bedienung
 Das System bietet eine intuitive Web-Oberfläche zur Steuerung aller angeschlossenen Geräte:
 
 **Zugriff:** `http://[IP-Adresse-des-WT32]/`
@@ -206,7 +324,7 @@ https://werner.rothschopf.net/microcontroller/202401_esp32_wt32_eth01_en.htm
 
 
 
-## Flashen
+## 🔧 Flashen
 
 Manuelles Flashen
 🔌 **Verkabelung**

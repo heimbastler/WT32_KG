@@ -1,14 +1,14 @@
 
 #include "Adafruit_MPR121.h"
-#include <PCF8574.h>
+#include <Adafruit_MCP23017.h>
 
-#define MPR_IRQ_PCF_PIN 0   // z.B. P0 vom pcfIn1 als IRQ Eingang
+#define MPR_IRQ_MCP_PIN 7   // GPA7 vom MCP23017 als IRQ Eingang (Wired-OR aller 3 Touchboards)
 
 // Externe Referenzen zu Hardware-Objekten (definiert in main.cpp)
 extern Adafruit_MPR121 cap1;
 extern Adafruit_MPR121 cap2; 
 extern Adafruit_MPR121 cap3;
-extern PCF8574 pcfIn1;
+extern Adafruit_MCP23017 mcpIn;
 
 // Externe Referenzen zu Relay-Funktionen (definiert in main.cpp)
 extern void toggleFensterrolloUp();
@@ -119,8 +119,8 @@ void initTouchBoards() {
 // Touch Events verarbeiten
 // ======================================================
 void handleTouchEvents() {
-  // IRQ über PCF erkennen
-  bool mprIRQ = (pcfIn1.digitalRead(MPR_IRQ_PCF_PIN) == LOW);
+  // IRQ über MCP23017 erkennen
+  bool mprIRQ = (mcpIn.digitalRead(MPR_IRQ_MCP_PIN) == LOW);
   if (mprIRQ) {
     checkMPR(cap1, "MPR121 #1", 0);
     checkMPR(cap2, "MPR121 #2", 1);
