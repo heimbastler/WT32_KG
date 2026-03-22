@@ -63,14 +63,15 @@
 #include <Wire.h>
 #include <WebServer.h>
 #include <ETH.h>
-#include <WiFi.h>
+#include <WiFi.h>  // WiFi für ESP-NOW benötigt (nicht für STA/AP)
 #include <ArduinoOTA.h>
-#include <Adafruit_MCP23017.h> // 16-Bit GPIO Expander für Eingänge
+#include <Adafruit_MCP23X17.h> // 16-Bit GPIO Expander für Eingänge
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
 #include "config.h"
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include "espnow_gateway.h"  // ESP-NOW Gateway
 
 // --- TouchBoards Funktionsprototypen ---
 void initTouchBoards();
@@ -98,7 +99,7 @@ String getNetworkStatus();
 #define TEMPERATURE_PRECISION 10  // 10-bit = 0.25°C Auflösung
 
 // ---------- MCP23017 Adresse für Switches/Eingänge ----------
-Adafruit_MCP23017 mcpIn;  // Adresse 0x20 (Standard) - 16 digitale Ein-/Ausgänge
+Adafruit_MCP23X17 mcpIn;  // Adresse 0x20 (Standard) - 16 digitale Ein-/Ausgänge
 
 // ---------- IR-Switch Küche Kabel EG11 ----------
 // Kabel EG11: br/ws = +5V, br = GND, grn = links, grn/ws = rechts
@@ -224,8 +225,14 @@ void handleKreuzschaltungKG();
 
 // --- Webserver Funktionsprototypen ---
 void handleRoot();
+void handleHome();
+void handleESPNow();
 void handleToggle();
 void handleLEDDimmer();
+void handleKronleuchterDimmer();
+void handlePairing();
+void handleClientDetail();
+void handleRemoveClient();
 
 
 
@@ -233,6 +240,14 @@ void handleLEDDimmer();
 unsigned long fensterrolloTimer = 0;
 unsigned long tuerrolloTimer = 0;
 const unsigned long rolloActiveTime = 60000; // ms, wie lange das Relais anzieht (1 Minute)
+
+// --- Zeitsteuerung für Temperaturmessung ---
+unsigned long lastTempUpdate = 0;
+const unsigned long tempUpdateInterval = 60000; // 1 Minute
+
+// --- Zeitsteuerung für I2C Lese-Operationen (Throttling) ---
+unsigned long lastI2CRead = 0;
+const unsigned long i2cReadInterval = 100; // Eingänge nur alle 100ms lesen
 
 // ======================================================
 // SETUP
@@ -242,6 +257,32 @@ void setup() {
   Serial.println("=== WT32-KG Smart Home Controller ===");
   Wire.begin(SDA_PIN, SCL_PIN);
   delay(500);
+
+  // ===== I2C SCANNER =====
+  Serial.println("\n=== I2C Bus Scanner ===");
+  Serial.println("Scanning for I2C devices...");
+  byte count = 0;
+  for (byte address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    byte error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print("✅ I2C device found at address 0x");
+      if (address < 16) Serial.print("0");
+      Serial.print(address, HEX);
+      Serial.print(" (");
+      Serial.print(address);
+      Serial.println(")");
+      count++;
+    }
+  }
+  if (count == 0) {
+    Serial.println("❌ No I2C devices found!");
+  } else {
+    Serial.print("✅ Found ");
+    Serial.print(count);
+    Serial.println(" I2C device(s)");
+  }
+  Serial.println("===================\n");
 
   // Netzwerk initialisieren (Ethernet + WiFi + AP)
   initNetworking();
@@ -255,9 +296,9 @@ void setup() {
     Serial.println("Start updating " + type);
     // Sicherheitshalber alle Relais ausschalten während Update
     for (int i = 0; i < 8; i++) {
-      pcaRel1.digitalWrite(i, HIGH);
-      pcaRel2.digitalWrite(i, HIGH);  
-      pcaRel3.digitalWrite(i, HIGH);
+      pcaRel1.digitalWrite(i, LOW);
+      pcaRel2.digitalWrite(i, LOW);  
+      pcaRel3.digitalWrite(i, LOW);
     }
     // LEDs ausschalten
     setLEDTreppeBrightness(0);
@@ -284,19 +325,43 @@ void setup() {
   ArduinoOTA.begin();
   Serial.println("OTA Ready - Hostname: WT32-KG-Controller");
 
-  // MCP23017 Input Expander starten
+  // MCP23017 Input Expander - DEAKTIVIERT (nicht angeschlossen)
+  /*
   if (!mcpIn.begin_I2C(0x20)) {
     Serial.println("ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
   } else {
     Serial.println("MCP23017 initialisiert auf Adresse 0x20");
   }
+  */
+  Serial.println("MCP23017: Übersprungen (nicht angeschlossen)");
 
   // PCA9535 Relais starten
-  pcaRel1.begin(0x22); // RelaisBoard_A: A2=offen, A1=löten, A0=offen
-  pcaRel2.begin(0x23); // RelaisBoard_B: A2=offen, A1=löten, A0=löten
-  pcaRel3.begin(0x24); // RelaisBoard_C: A2=löten, A1=offen, A0=offen
+  Serial.println("\n=== PCA9535 Relais-Boards Initialisierung ===");
+  bool pca1_ok = pcaRel1.begin(0x22);
+  bool pca2_ok = pcaRel2.begin(0x23);
+  bool pca3_ok = pcaRel3.begin(0x24);
+  
+  if (pca1_ok) {
+    Serial.println("✅ PCA9535 Board 1 (0x22) initialisiert");
+  } else {
+    Serial.println("❌ PCA9535 Board 1 (0x22) NICHT gefunden!");
+  }
+  
+  if (pca2_ok) {
+    Serial.println("✅ PCA9535 Board 2 (0x23) initialisiert");
+  } else {
+    Serial.println("❌ PCA9535 Board 2 (0x23) NICHT gefunden!");
+  }
+  
+  if (pca3_ok) {
+    Serial.println("✅ PCA9535 Board 3 (0x24) initialisiert");
+  } else {
+    Serial.println("❌ PCA9535 Board 3 (0x24) NICHT gefunden!");
+  }
+  Serial.println("==========================================\n");
 
-  // Switches als INPUT (MCP23017 Port A: GPA0-GPA7)
+  // Switches als INPUT - DEAKTIVIERT
+  /*
   for (int i = 0; i < 8; i++) {
     mcpIn.pinMode(i, INPUT);
   }
@@ -304,39 +369,53 @@ void setup() {
   for (int i = 8; i < 16; i++) {
     mcpIn.pinMode(i, INPUT);
   }
+  */
+  Serial.println("MCP23017 Eingänge: Übersprungen");
 
-  // Relais als OUTPUT und alle AUS (HIGH)
+  // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
   for (int i = 0; i < 8; i++) {
     pcaRel1.pinMode(i, OUTPUT);
-    pcaRel1.digitalWrite(i, HIGH);
+    pcaRel1.digitalWrite(i, LOW);
     pcaRel2.pinMode(i, OUTPUT);
-    pcaRel2.digitalWrite(i, HIGH);
+    pcaRel2.digitalWrite(i, LOW);
     pcaRel3.pinMode(i, OUTPUT);
-    pcaRel3.digitalWrite(i, HIGH);
+    pcaRel3.digitalWrite(i, LOW);
   }
   for (int i = 0; i < 24; i++) {
     relayState[i] = 0;
   }
 
   // PWM für LED Dimmer konfigurieren
-  ledcAttach(LED_TREPPE_PIN, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL_TREPPE, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(LED_TREPPE_PIN, PWM_CHANNEL_TREPPE);
   setLEDTreppeBrightness(0); // Starten mit LEDs aus
   
   // PWM für Kronleuchter AC Dimmer konfigurieren
-  ledcAttach(KRONLEUCHTER_DIMMER_PIN, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL_KRONLEUCHTER, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(KRONLEUCHTER_DIMMER_PIN, PWM_CHANNEL_KRONLEUCHTER);
   setKronleuchterBrightness(0); // Starten mit Kronleuchter aus
 
-  // TouchBoards initialisieren
-  initTouchBoards();
+  // TouchBoards - DEAKTIVIERT (nicht angeschlossen)
+  // initTouchBoards();
+  Serial.println("TouchBoards: Übersprungen (nicht angeschlossen)");
 
-  // Temperatursensoren initialisieren
-  initTemperatureSensors();
+  // Temperatursensoren - DEAKTIVIERT
+  // initTemperatureSensors();
+  Serial.println("DS18B20 Sensoren: Übersprungen");
+
+  // ESP-NOW Gateway initialisieren
+  initESPNowGateway();
 
   // Webserver konfigurieren
   server.on("/", handleRoot);
+  server.on("/home", handleHome);
+  server.on("/espnow", handleESPNow);
   server.on("/toggle", handleToggle);
   server.on("/led", handleLEDDimmer);
   server.on("/kronleuchter", handleKronleuchterDimmer);
+  server.on("/pairing", handlePairing);
+  server.on("/client", handleClientDetail);
+  server.on("/remove_client", handleRemoveClient);
   server.begin();
   Serial.println("Webserver gestartet");
 }
@@ -348,45 +427,59 @@ void loop() {
   ArduinoOTA.handle();  // OTA Updates verarbeiten
   server.handleClient();
   
-  // Netzwerk Events überwachen
-  handleWiFiEvents();
-
-  // Eingänge lesen (über MCP23017 Port A und B)
-  for (int i = 0; i < 8; i++) {
-    inputState[i] = mcpIn.digitalRead(i);      // Port A: GPA0-GPA7
-    inputState[i + 8] = mcpIn.digitalRead(i + 8);  // Port B: GPB0-GPB7
+  // ESP-NOW Client-Timeouts prüfen (alle 10 Sekunden)
+  static unsigned long lastTimeoutCheck = 0;
+  if (millis() - lastTimeoutCheck > 10000) {
+    checkClientTimeouts();
+    lastTimeoutCheck = millis();
   }
+  
+  // === NUR RELAIS-STEUERUNG AKTIV ===
+  // MCP23017, MPR121 und DS18B20 sind deaktiviert
+  
+  /* DEAKTIVIERT - Geräte nicht angeschlossen
+  // Eingänge und Touch-Events nur alle 100ms lesen (I2C-Throttling)
+  if (millis() - lastI2CRead >= i2cReadInterval) {
+    lastI2CRead = millis();
+    
+    // Eingänge lesen (über MCP23017 Port A und B)
+    for (int i = 0; i < 8; i++) {
+      inputState[i] = mcpIn.digitalRead(i);      // Port A: GPA0-GPA7
+      inputState[i + 8] = mcpIn.digitalRead(i + 8);  // Port B: GPB0-GPB7
+    }
 
-  // Touch Events verarbeiten
-  handleTouchEvents();
+    // Touch Events verarbeiten
+    handleTouchEvents();
 
-  // IR-Switch Küche überwachen
-  handleIRSwitchKitchen();
+    // IR-Switch Küche überwachen
+    handleIRSwitchKitchen();
 
-  // Kreuzschaltungen überwachen
-  handleKreuzschaltungEG();
-  handleKreuzschaltungKG();
+    // Kreuzschaltungen überwachen
+    handleKreuzschaltungEG();
+    handleKreuzschaltungKG();
+  }
 
   // Temperaturen alle 1 Minute aktualisieren
   if (millis() - lastTempUpdate > tempUpdateInterval) {
     updateTemperatures();
     lastTempUpdate = millis();
   }
+  */
 
   // --- Sicherheits-Timeout für Rollos (5 Minuten) ---
   // Verhindert dass Rollos bei Fehler endlos laufen
   if (fensterrolloTimer > 0 && millis() - fensterrolloTimer > (rolloActiveTime * 5)) {
     Serial.println("SICHERHEITS-STOPP Fensterrollo nach 5 Minuten");
     relayState[0] = 0; relayState[1] = 0;
-    pcaRel1.digitalWrite(0, HIGH);
-    pcaRel1.digitalWrite(1, HIGH);
+    pcaRel1.digitalWrite(0, LOW);
+    pcaRel1.digitalWrite(1, LOW);
     fensterrolloTimer = 0;
   }
   if (tuerrolloTimer > 0 && millis() - tuerrolloTimer > (rolloActiveTime * 5)) {
     Serial.println("SICHERHEITS-STOPP Türrollo nach 5 Minuten");
     relayState[2] = 0; relayState[3] = 0;
-    pcaRel1.digitalWrite(2, HIGH);
-    pcaRel1.digitalWrite(3, HIGH);
+    pcaRel1.digitalWrite(2, LOW);
+    pcaRel1.digitalWrite(3, LOW);
     tuerrolloTimer = 0;
   }
 
@@ -397,36 +490,72 @@ void loop() {
 // Webserver Handler
 // ======================================================
 void handleRoot() {
-  String html = "<html><head><title>WT32-KG Controller</title>";
+  // Standardmäßig zur Home-Seite weiterleiten
+  server.sendHeader("Location", "/home");
+  server.send(303);
+}
+
+// ===== Gemeinsame HTML-Header-Funktion =====
+String getHTMLHeader(String activeTab) {
+  String html = "<html><head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<title>WT32-KG Controller</title>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   html += "<style>";
-  html += "body{font-family:Arial;margin:10px;background:#f5f5f5;}";
-  html += ".container{max-width:1200px;margin:0 auto;background:white;padding:20px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
-  html += "h2{color:#333;text-align:center;border-bottom:2px solid #4CAF50;padding-bottom:10px;}";
-  html += "h3{color:#555;margin-top:30px;border-left:4px solid #2196F3;padding-left:15px;}";
+  html += "body{font-family:Arial;margin:0;padding:0;background:#f5f5f5;font-size:14px;}";
+  html += ".container{max-width:600px;margin:0 auto;background:white;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.1);overflow:hidden;}";
+  html += "h2{color:#333;text-align:center;padding:15px 10px 10px 10px;font-size:18px;margin:0;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;}";
+  html += "h3{color:#555;margin:15px 10px 8px 10px;border-left:3px solid #2196F3;padding-left:10px;font-size:16px;}";
+  
+  // Tab-Navigation
+  html += ".tabs{display:flex;background:#e0e0e0;margin:0;padding:0;list-style:none;border-bottom:2px solid #4CAF50;}";
+  html += ".tab{flex:1;text-align:center;padding:12px 5px;cursor:pointer;background:#e0e0e0;border:none;font-size:13px;font-weight:bold;color:#555;text-decoration:none;display:block;transition:all 0.3s;}";
+  html += ".tab:hover{background:#d0d0d0;}";
+  html += ".tab.active{background:#4CAF50;color:white;border-bottom:3px solid #2e7d32;}";
+  
+  // Content Area
+  html += ".content{padding:10px;}";
   
   // Button Styles
-  html += ".btn{padding:12px 20px;margin:5px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold;transition:all 0.3s;min-width:200px;display:inline-block;text-align:center;text-decoration:none;}";
-  html += ".btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.2);}";
+  html += ".btn{padding:8px 12px;margin:3px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold;transition:all 0.2s;min-width:120px;display:inline-block;text-align:center;text-decoration:none;}";
+  html += ".btn:active{transform:scale(0.95);}";
   html += ".btn-on{background:#4CAF50;color:white;}";
   html += ".btn-off{background:#f44336;color:white;}";
-  html += ".btn-rollo{background:#FF9800;color:white;min-width:100px;margin:2px;}";
+  html += ".btn-rollo{background:#FF9800;color:white;min-width:70px;margin:2px;padding:8px 10px;}";
   html += ".btn-neutral{background:#607D8B;color:white;}";
   
   // Layout Styles
-  html += ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin:20px 0;}";
-  html += ".card{background:#fafafa;padding:15px;border-radius:8px;border:1px solid #ddd;}";
-  html += ".rollo-group{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:10px 0;}";
-  html += ".rollo-label{min-width:180px;font-weight:bold;}";
+  html += ".grid{display:grid;grid-template-columns:1fr;gap:10px;margin:10px 0;}";
+  html += ".card{background:#fafafa;padding:10px;border-radius:6px;border:1px solid #ddd;margin:10px 0;}";
+  html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:8px 0;}";
+  html += ".rollo-label{min-width:100px;font-weight:bold;font-size:13px;}";
   
   // Table Styles
-  html += "table{border-collapse:collapse;width:100%;margin:15px 0;}";
-  html += "td,th{border:1px solid #ddd;padding:8px;text-align:center;}";
+  html += "table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px;}";
+  html += "td,th{border:1px solid #ddd;padding:5px;text-align:center;}";
   html += "th{background:#f0f0f0;font-weight:bold;}";
   html += "</style></head><body>";
   
   html += "<div class='container'>";
-  html += "<h2>🏠 WT32-KG Smart Home Controller</h2>";
+  html += "<h2>🏠 WT32-KG Smart Home</h2>";
+  
+  // Tab-Navigation
+  html += "<div class='tabs'>";
+  html += "<a href='/home' class='tab" + String(activeTab == "home" ? " active" : "") + "'>🏠 Home</a>";
+  html += "<a href='/espnow' class='tab" + String(activeTab == "espnow" ? " active" : "") + "'>📡 ESP-NOW</a>";
+  html += "</div>";
+  
+  html += "<div class='content'>";
+  return html;
+}
+
+String getHTMLFooter() {
+  return "</div></div></body></html>";
+}
+
+// ===== Home-Seite =====
+void handleHome() {
+  String html = getHTMLHeader("home");
   
   // Netzwerk Status
   html += getNetworkStatus();
@@ -557,51 +686,6 @@ void handleRoot() {
   // R12 - Reserve Wohnzimmer
   String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
   html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</a>";
-  
-  // R05 - Steinlampe
-  String steinlampeClass = relayState[5] ? "btn-on" : "btn-off";
-  String steinlampeStatus = relayState[5] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=5' class='btn " + steinlampeClass + "'>� Steinlampe (R05): " + steinlampeStatus + "</a><br>";
-  
-  // R06 - KG Flurlampe
-  String kgFlurClass = relayState[6] ? "btn-on" : "btn-off";
-  String kgFlurStatus = relayState[6] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=6' class='btn " + kgFlurClass + "'>� KG Flurlampe (R06): " + kgFlurStatus + "</a><br>";
-  
-  // R07 - Kuechenarbeitslampe
-  String kuechenArbeitClass = relayState[7] ? "btn-on" : "btn-off";
-  String kuechenArbeitStatus = relayState[7] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=7' class='btn " + kuechenArbeitClass + "'>� Kuechenarbeitslampe (R07): " + kuechenArbeitStatus + "</a><br>";
-  
-  // R08 - Kuechenlampe
-  String kuechenClass = relayState[8] ? "btn-on" : "btn-off";
-  String kuechenStatus = relayState[8] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=8' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08): " + kuechenStatus + "</a><br>";
-  
-  // R09 - EG Flurlampe
-  String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
-  String egFlurStatus = relayState[9] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=9' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09): " + egFlurStatus + "</a><br>";
-  
-  // R10 - Traegerlampen
-  String traegerClass = relayState[10] ? "btn-on" : "btn-off";
-  String traegerStatus = relayState[10] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=10' class='btn " + traegerClass + "'>💡 Traegerlampen (R10): " + traegerStatus + "</a><br>";
-  
-  // R11 - Kronleuchter (mit Dimmerfunktion)
-  String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
-  String kronleuchterStatus = relayState[11] ? "EIN" : "AUS";
-  int kronPercent = (kronleuchterBrightness * 100) / 255;
-  html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11): " + kronleuchterStatus;
-  if (relayState[11]) {
-    html += " (" + String(kronPercent) + "%)";
-  }
-  html += "</a><br>";
-  
-  // R12 - Reserve Wohnzimmer
-  String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
-  String wohnzimmer2Status = relayState[12] ? "EIN" : "AUS";
-  html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12): " + wohnzimmer2Status + "</a>";
   html += "</div>";
   
   html += "</div>";
@@ -652,13 +736,110 @@ void handleRoot() {
   // Temperatursensoren nach digitalen Eingängen
   html += getTemperatureHTML();
   
-  html += "<br><a href='/wifi' style='color:#2196F3;text-decoration:none;'>📶 WiFi Konfiguration</a>";
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== ESP-NOW Seite =====
+void handleESPNow() {
+  String html = getHTMLHeader("espnow");
+  
+  html += "<h3>📡 ESP-NOW Gateway</h3>";
+  html += "<div style='margin:10px 0;'>";
+  html += "<a href='/pairing' class='btn " + String(espnowPairingMode ? "btn-on" : "btn-neutral") + "' style='min-width:150px;'>";
+  html += espnowPairingMode ? "🔗 Pairing AKTIV" : "🔗 Pairing aktivieren";
+  html += "</a>";
+  html += "</div>";
+  
+  if (espnowClientCount == 0) {
+    html += "<div class='card'>";
+    html += "<p style='text-align:center;color:#888;'>Keine Clients gepairt.</p>";
+    html += "<p style='text-align:center;font-size:12px;'>Aktivieren Sie den Pairing-Modus und starten Sie einen ESP-NOW Client zum Pairen.</p>";
+    html += "</div>";
+  } else {
+    html += "<table><tr><th>Name</th><th>Typ</th><th>Status</th><th>Aktion</th></tr>";
+    for (int i = 0; i < espnowClientCount; i++) {
+      ESPNowClient *c = &espnowClients[i];
+      html += "<tr><td>" + String(c->name) + "</td>";
+      html += "<td>";
+      switch (c->type) {
+        case CLIENT_TYPE_SENSOR: html += "📊 Sensor"; break;
+        case CLIENT_TYPE_SWITCH: html += "🔘 Schalter"; break;
+        case CLIENT_TYPE_RELAY: html += "⚡ Relais"; break;
+        case CLIENT_TYPE_DIMMER: html += "💡 Dimmer"; break;
+        default: html += "❓ Custom"; break;
+      }
+      html += "</td><td>";
+      html += c->online ? "🟢 Online" : "🔴 Offline";
+      html += "</td><td>";
+      html += "<a href='/client?id=" + String(i) + "' class='btn btn-neutral' style='min-width:70px;font-size:11px;padding:5px 8px;'>Details</a>";
+      html += "</td></tr>";
+    }
+    html += "</table>";
+    
+    // Info-Box
+    html += "<div class='card' style='background:#e3f2fd;border-color:#2196F3;'>";
+    html += "<p style='margin:5px 0;font-size:12px;'><b>ℹ️ Gateway Status:</b></p>";
+    html += "<p style='margin:5px 0;font-size:12px;'>• Gepairt: " + String(espnowClientCount) + " Client(s)</p>";
+    html += "<p style='margin:5px 0;font-size:12px;'>• Pairing-Modus: " + String(espnowPairingMode ? "Aktiv" : "Inaktiv") + "</p>";
+    html += "<p style='margin:5px 0;font-size:12px;'>• Gateway MAC: " + WiFi.macAddress() + "</p>";
+    html += "</div>";
+  }
+  
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== ESP-NOW Handler =====
+void handlePairing() {
+  // Pairing-Modus umschalten
+  espnowPairingMode = !espnowPairingMode;
+  enablePairingMode(espnowPairingMode);
+  
+  String html = "<html><head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta http-equiv='refresh' content='2; url=/espnow'>";  // Redirect zu ESP-NOW Seite
+  html += "<title>Pairing</title>";
+  html += "<style>body{font-family:Arial;text-align:center;padding:50px;background:#f5f5f5;}</style>";
+  html += "</head><body>";
+  html += "<div style='background:white;padding:30px;border-radius:8px;display:inline-block;box-shadow:0 2px 5px rgba(0,0,0,0.1);'>";
+  html += "<h2 style='margin-top:0;'>" + String(espnowPairingMode ? "🔗 Pairing-Modus AKTIV" : "❌ Pairing-Modus INAKTIV") + "</h2>";
+  if (espnowPairingMode) {
+    html += "<p>Starten Sie jetzt Ihren ESP-NOW Client zum Pairen.</p>";
+    html += "<p style='color:#4CAF50;font-weight:bold;'>Pairing-Fenster: 60 Sekunden</p>";
+  } else {
+    html += "<p>Pairing-Modus wurde deaktiviert.</p>";
+  }
+  html += "<p style='color:#888;font-size:12px;'>Sie werden in 2 Sekunden weitergeleitet...</p>";
   html += "</div></body></html>";
-  server.send(200, "text/html", html);
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+void handleClientDetail() {
+  int clientId = server.arg("id").toInt();
+  
+  String html = getHTMLHeader("espnow");
+  html += getClientDetailHTML(clientId);
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+void handleRemoveClient() {
+  int clientId = server.arg("id").toInt();
+  
+  if (clientId >= 0 && clientId < espnowClientCount) {
+    removeESPNowClient(espnowClients[clientId].mac);
+  }
+  
+  // Redirect zurück zur ESP-NOW Seite
+  server.sendHeader("Location", "/espnow");
+  server.send(303);
 }
 
 void handleToggle() {
   int idx = server.arg("r").toInt();
+  Serial.print("🔧 handleToggle() called - Index: ");
+  Serial.println(idx);
   
   // Spezielle Behandlung für Rollos (Start/Stopp Logik)
   if (idx == 0) {
@@ -673,13 +854,32 @@ void handleToggle() {
     // Spezielle Behandlung für Kronleuchter (AC Dimmer)
     toggleKronleuchter();
   } else if (idx < 24) {
-    // Standard Toggle für alle anderen Relais
+    // Standard Toggle für alle anderen Relais (nicht-invertiert: LOW=AUS, HIGH=EIN)
     relayState[idx] = !relayState[idx];
     int chip = idx / 8;
     int pin = idx % 8;
-    if (chip == 0) pcaRel1.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
-    if (chip == 1) pcaRel2.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
-    if (chip == 2) pcaRel3.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
+    
+    Serial.print("  Chip: ");
+    Serial.print(chip);
+    Serial.print(" (0x");
+    Serial.print(0x22 + chip, HEX);
+    Serial.print("), Pin: ");
+    Serial.print(pin);
+    Serial.print(", New State: ");
+    Serial.println(relayState[idx] ? "ON (HIGH)" : "OFF (LOW)");
+    
+    if (chip == 0) {
+      pcaRel1.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+      Serial.println("  -> Written to pcaRel1");
+    }
+    if (chip == 1) {
+      pcaRel2.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+      Serial.println("  -> Written to pcaRel2");
+    }
+    if (chip == 2) {
+      pcaRel3.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+      Serial.println("  -> Written to pcaRel3");
+    }
   }
   
   server.sendHeader("Location", "/");
@@ -697,15 +897,15 @@ void toggleFensterrolloUp() {
   if (relayState[0] == 1) {
     // Bereits hoch aktiv → STOPP
     relayState[0] = 0;
-    pcaRel1.digitalWrite(0, HIGH);  // AUS
+    pcaRel1.digitalWrite(0, LOW);  // AUS
     Serial.println("Fensterrollo STOPP (war hoch)");
     fensterrolloTimer = 0;
   } else {
     // Start hoch, runter stoppen
     relayState[0] = 1;
     relayState[1] = 0;
-    pcaRel1.digitalWrite(0, LOW);   // Hoch EIN
-    pcaRel1.digitalWrite(1, HIGH);  // Runter AUS
+    pcaRel1.digitalWrite(0, HIGH);   // Hoch EIN
+    pcaRel1.digitalWrite(1, LOW);  // Runter AUS
     Serial.println("Fensterrollo START hoch");
     fensterrolloTimer = millis();
   }
@@ -717,15 +917,15 @@ void toggleFensterrolloDown() {
   if (relayState[1] == 1) {
     // Bereits runter aktiv → STOPP
     relayState[1] = 0;
-    pcaRel1.digitalWrite(1, HIGH);  // AUS
+    pcaRel1.digitalWrite(1, LOW);  // AUS
     Serial.println("Fensterrollo STOPP (war runter)");
     fensterrolloTimer = 0;
   } else {
     // Start runter, hoch stoppen
     relayState[0] = 0;
     relayState[1] = 1;
-    pcaRel1.digitalWrite(0, HIGH);  // Hoch AUS
-    pcaRel1.digitalWrite(1, LOW);   // Runter EIN
+    pcaRel1.digitalWrite(0, LOW);  // Hoch AUS
+    pcaRel1.digitalWrite(1, HIGH);   // Runter EIN
     Serial.println("Fensterrollo START runter");
     fensterrolloTimer = millis();
   }
@@ -737,15 +937,15 @@ void toggleTuerrolloUp() {
   if (relayState[2] == 1) {
     // Bereits hoch aktiv → STOPP
     relayState[2] = 0;
-    pcaRel1.digitalWrite(2, HIGH);  // AUS
+    pcaRel1.digitalWrite(2, LOW);  // AUS
     Serial.println("Türrollo STOPP (war hoch)");
     tuerrolloTimer = 0;
   } else {
     // Start hoch, runter stoppen
     relayState[2] = 1;
     relayState[3] = 0;
-    pcaRel1.digitalWrite(2, LOW);   // Hoch EIN
-    pcaRel1.digitalWrite(3, HIGH);  // Runter AUS
+    pcaRel1.digitalWrite(2, HIGH);   // Hoch EIN
+    pcaRel1.digitalWrite(3, LOW);  // Runter AUS
     Serial.println("Türrollo START hoch");
     tuerrolloTimer = millis();
   }
@@ -757,15 +957,15 @@ void toggleTuerrolloDown() {
   if (relayState[3] == 1) {
     // Bereits runter aktiv → STOPP
     relayState[3] = 0;
-    pcaRel1.digitalWrite(3, HIGH);  // AUS
+    pcaRel1.digitalWrite(3, LOW);  // AUS
     Serial.println("Türrollo STOPP (war runter)");
     tuerrolloTimer = 0;
   } else {
     // Start runter, hoch stoppen
     relayState[2] = 0;
     relayState[3] = 1;
-    pcaRel1.digitalWrite(2, HIGH);  // Hoch AUS
-    pcaRel1.digitalWrite(3, LOW);   // Runter EIN
+    pcaRel1.digitalWrite(2, LOW);  // Hoch AUS
+    pcaRel1.digitalWrite(3, HIGH);   // Runter EIN
     Serial.println("Türrollo START runter");
     tuerrolloTimer = millis();
   }
@@ -775,63 +975,63 @@ void toggleAussenlampeGarten() {
   // TouchBoard1: case 0: unten 2te von links
   int idx = 4;
   relayState[idx] = !relayState[idx];
-  pcaRel1.digitalWrite(idx, relayState[idx] ? LOW : HIGH);
+  pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
 }
 void toggleSteinlampe() {
   // R05 (idx 5)
   // TouchBoard2: case 6: 2te links (auskommentiert in old)
   int idx = 5;
   relayState[idx] = !relayState[idx];
-  pcaRel1.digitalWrite(idx, relayState[idx] ? LOW : HIGH);
+  pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
 }
 void toggleKGFlurlampe() {
   // R06 (idx 6)
   // Kein direkter Touch, Schalter/EG/KG
   int idx = 6;
   relayState[idx] = !relayState[idx];
-  pcaRel1.digitalWrite(idx, relayState[idx] ? LOW : HIGH);
+  pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
 }
 void toggleKuechenarbeitslampe() {
   // R07 (idx 7)
   // TouchBoard2: case 3: unten links
   int idx = 7;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(0, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(0, relayState[idx] ? HIGH : LOW);
 }
 void toggleKuechenlampe() {
   // R08 (idx 8)
   // TouchBoard2: case 2: 3te links
   int idx = 8;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(1, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(1, relayState[idx] ? HIGH : LOW);
 }
 void toggleEGFlurlampe() {
   // R09 (idx 9)
   // TouchBoard2: case 0: 3te rechts
   int idx = 9;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(2, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(2, relayState[idx] ? HIGH : LOW);
 }
 void toggleTraegerlampen() {
   // R10 (idx 10)
   // TouchBoard2: case 1: unten rechts
   int idx = 10;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(3, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(3, relayState[idx] ? HIGH : LOW);
 }
 void toggleWohnzimmerlampe1() {
   // R11 (idx 11)
   // TouchBoard1: case 2: oben 1te von links
   int idx = 11;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(4, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(4, relayState[idx] ? HIGH : LOW);
 }
 void toggleWohnzimmerlampe2() {
   // R12 (idx 12)
   // Kein direkter Touch, nur Gruppe
   int idx = 12;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(5, relayState[idx] ? LOW : HIGH);
+  pcaRel2.digitalWrite(5, relayState[idx] ? HIGH : LOW);
 }
 void toggleLamps() {
   // Gruppe: R05, R07, R08, R09, R10, R11, R12 (idx 5,7,8,9,10,11,12)
@@ -840,9 +1040,9 @@ void toggleLamps() {
     relayState[idx] = !relayState[idx];
     int chip = idx / 8;
     int pin = idx % 8;
-    if (chip == 0) pcaRel1.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
-    if (chip == 1) pcaRel2.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
-    if (chip == 2) pcaRel3.digitalWrite(pin, relayState[idx] ? LOW : HIGH);
+    if (chip == 0) pcaRel1.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+    if (chip == 1) pcaRel2.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+    if (chip == 2) pcaRel3.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
   }
 }
 

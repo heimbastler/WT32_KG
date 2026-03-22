@@ -1,0 +1,148 @@
+#ifndef SECURE_CONFIG_H
+#define SECURE_CONFIG_H
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      SECURE CONFIGURATION FILE                               ║
+// ║                         WT32-KG Smart Home                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+//
+// ⚠️  WICHTIG: Diese Datei enthält sensible Daten!
+// ⚠️  NIEMALS in öffentliche Repositories hochladen!
+//
+// Setup-Anleitung:
+// 1. Kopiere diese Datei nach: src/secure_config.h
+// 2. Trage deine echten Zugangsdaten ein
+// 3. Die Datei src/secure_config.h ist bereits in .gitignore eingetragen
+//
+// Erstelldatum: 13. Dezember 2025
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                         WiFi KONFIGURATION                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+#define WIFI_SSID "DEIN_WLAN_NAME"
+#define WIFI_PASSWORD "DEIN_WLAN_PASSWORT"
+
+// Optional: Zweites WLAN als Fallback
+#define WIFI_SSID_BACKUP "BACKUP_WLAN_NAME"
+#define WIFI_PASSWORD_BACKUP "BACKUP_WLAN_PASSWORT"
+
+// Access Point Konfiguration (wenn kein WLAN verfügbar)
+#define AP_SSID "WT32-KG-Setup"
+#define AP_PASSWORD "12345678"  // Mindestens 8 Zeichen!
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    STATISCHE IP KONFIGURATION (Optional)                     ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Auskommentieren (#define USE_STATIC_IP) für DHCP
+// Aktivieren für feste IP-Adresse
+// #define USE_STATIC_IP
+
+#define STATIC_IP_ADDR "192.168.1.100"
+#define GATEWAY_ADDR "192.168.1.1"
+#define SUBNET_MASK "255.255.255.0"
+#define DNS_PRIMARY "8.8.8.8"
+#define DNS_SECONDARY "8.8.4.4"
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      WEB INTERFACE SECURITY                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+#define WEB_USERNAME "admin"
+#define WEB_PASSWORD "MeinSicheresPasswort123!"  // ⚠️ ÄNDERE DAS!
+
+// Optional: API Token für externe Zugriffe
+#define API_TOKEN "dein_geheimer_api_token_hier"
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                      MQTT BROKER (Optional)                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// MQTT für Home Assistant Integration
+// #define ENABLE_MQTT  // Aktivieren wenn benötigt
+
+#define MQTT_SERVER "192.168.1.50"
+#define MQTT_PORT 1883
+#define MQTT_USER "mqtt_benutzer"
+#define MQTT_PASSWORD "mqtt_passwort"
+#define MQTT_CLIENT_ID "wt32_kg_controller"
+
+// MQTT Topics
+#define MQTT_TOPIC_BASE "home/wt32kg"
+#define MQTT_TOPIC_STATUS "home/wt32kg/status"
+#define MQTT_TOPIC_RELAY "home/wt32kg/relay"
+#define MQTT_TOPIC_INPUT "home/wt32kg/input"
+#define MQTT_TOPIC_TEMP "home/wt32kg/temperature"
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    OTA UPDATE KONFIGURATION                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+#define OTA_PASSWORD "ota_update_passwort"
+#define OTA_HOSTNAME "wt32-kg-controller"
+#define OTA_PORT 3232
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    TELEGRAM BOT (Optional)                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Telegram Benachrichtigungen für System-Events
+// #define ENABLE_TELEGRAM  // Aktivieren wenn benötigt
+
+// Bot Token von @BotFather auf Telegram erhalten
+#define TELEGRAM_BOT_TOKEN "1234567890:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+// Chat ID durch /getUpdates API nach erster Nachricht an Bot
+#define TELEGRAM_CHAT_ID "123456789"
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    NTP SERVER KONFIGURATION                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+#define NTP_SERVER "pool.ntp.org"
+#define NTP_SERVER_BACKUP "time.nist.gov"
+#define TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"  // Europa/Berlin
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                    MASTER ESP32 KOMMUNIKATION (Optional)                     ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Für Multi-ESP32 Netzwerk mit Master/Slave Architektur
+// #define ENABLE_MASTER_COMM  // Aktivieren wenn benötigt
+
+#define MASTER_ESP_IP "192.168.1.99"
+#define MASTER_ESP_ID "master_esp_001"
+#define MASTER_ESP_PASSWORD "master_kommunikation_passwort"
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                         ENTWICKLER OPTIONEN                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+// Debug Modus (verbose Serial Output)
+// #define DEBUG_MODE
+
+// Serial Baud Rate
+#define SERIAL_BAUD 115200
+
+// Watchdog Timer (Sekunden)
+#define WATCHDOG_TIMEOUT 30
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                         SICHERHEITSHINWEISE                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+//
+// ✅ EMPFEHLUNGEN:
+// 1. Verwende starke, einzigartige Passwörter
+// 2. Ändere Standard-Passwörter sofort nach Setup
+// 3. Nutze WPA3 für WiFi wenn verfügbar
+// 4. Aktiviere Firewall für Web-Interface (nur lokales Netzwerk)
+// 5. Regelmäßige Backups der Konfiguration
+//
+// ⚠️  ACHTUNG:
+// - Diese Datei NIEMALS ins öffentliche Git-Repository hochladen!
+// - Prüfe .gitignore ob src/secure_config.h ausgeschlossen ist
+// - Bei Weitergabe: nur secure_config.h.example teilen (Dummy-Werte)
+//
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+#endif // SECURE_CONFIG_H

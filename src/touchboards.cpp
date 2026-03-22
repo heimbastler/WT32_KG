@@ -1,6 +1,6 @@
 
 #include "Adafruit_MPR121.h"
-#include <Adafruit_MCP23017.h>
+#include <Adafruit_MCP23X17.h>
 
 #define MPR_IRQ_MCP_PIN 7   // GPA7 vom MCP23017 als IRQ Eingang (Wired-OR aller 3 Touchboards)
 
@@ -8,7 +8,7 @@
 extern Adafruit_MPR121 cap1;
 extern Adafruit_MPR121 cap2; 
 extern Adafruit_MPR121 cap3;
-extern Adafruit_MCP23017 mcpIn;
+extern Adafruit_MCP23X17 mcpIn;
 
 // Externe Referenzen zu Relay-Funktionen (definiert in main.cpp)
 extern void toggleFensterrolloUp();
