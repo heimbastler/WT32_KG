@@ -2,7 +2,24 @@
 #include "Adafruit_MPR121.h"
 #include <Adafruit_MCP23X17.h>
 
-#define MPR_IRQ_MCP_PIN 7   // GPA7 vom MCP23017 als IRQ Eingang (Wired-OR aller 3 Touchboards)
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                   MPR121 IRQ KONFIGURATION                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// 
+// OPTION 1: Direkter GPIO16 Interrupt (VORBEREITET - bevorzugt)
+// --------------------------------------------------------------
+// - Alle 3 MPR121 IRQ-Leitungen via Wired-OR + Level Shifter → GPIO16
+// - Interrupt-Handler in main.cpp: mpr121ISR()
+// - Flag: mpr121InterruptFlag
+// - Vorteil: Schnelle Reaktion, keine MCP23017 GPA7 belegt
+//
+// OPTION 2: Via MCP23017 GPA7 (LEGACY - veraltet)
+// ------------------------------------------------
+// - MPR121 IRQs → GPA7 → ESP32 via MCP23017 Interrupt
+// - Nachteil: Umweg über zusätzlichen I²C-Chip
+//
+// AKTUELL: Polling-Modus (keine Hardware angeschlossen)
+// ======================================================
 
 // Externe Referenzen zu Hardware-Objekten (definiert in main.cpp)
 extern Adafruit_MPR121 cap1;
@@ -119,13 +136,32 @@ void initTouchBoards() {
 // Touch Events verarbeiten
 // ======================================================
 void handleTouchEvents() {
-  // IRQ über MCP23017 erkennen
-  bool mprIRQ = (mcpIn.digitalRead(MPR_IRQ_MCP_PIN) == LOW);
-  if (mprIRQ) {
-    checkMPR(cap1, "MPR121 #1", 0);
-    checkMPR(cap2, "MPR121 #2", 1);
-    checkMPR(cap3, "MPR121 #3", 2);
-  }
+  // ═══════════════════════════════════════════════════════════════
+  // WENN MPR121 AKTIVIERT: Wähle eine der folgenden Optionen:
+  // ═══════════════════════════════════════════════════════════════
+  
+  // OPTION 1: Direkter GPIO16 Interrupt (EMPFOHLEN - in main.cpp aktivieren)
+  // -------------------------------------------------------------------------
+  // Diese Funktion wird nur aufgerufen wenn mpr121InterruptFlag gesetzt ist
+  // Kein IRQ-Check nötig, direkt alle 3 Boards prüfen:
+  //
+  // checkMPR(cap1, "MPR121 #1", 0);
+  // checkMPR(cap2, "MPR121 #2", 1);
+  // checkMPR(cap3, "MPR121 #3", 2);
+  
+  // OPTION 2: Legacy - Via MCP23017 GPA7 (NICHT EMPFOHLEN)
+  // -------------------------------------------------------
+  // #define MPR_IRQ_MCP_PIN 7  // Oben definieren
+  // bool mprIRQ = (mcpIn.digitalRead(MPR_IRQ_MCP_PIN) == LOW);
+  // if (mprIRQ) {
+  //   checkMPR(cap1, "MPR121 #1", 0);
+  //   checkMPR(cap2, "MPR121 #2", 1);
+  //   checkMPR(cap3, "MPR121 #3", 2);
+  // }
+  
+  // AKTUELL: Polling-Modus (Hardware nicht angeschlossen)
+  // ------------------------------------------------------
+  // Funktion tut nichts, da keine MPR121 Hardware vorhanden
 }
 
 // ======================================================

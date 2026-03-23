@@ -1,60 +1,79 @@
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                    WT32-ETH01 (ESP32-WROOM-32) Pin Layout                    ║
+// ║                    WT32-ETH01 (ESP32-WROOM-32) PINMAP                        ║
 // ║                              Version 1.4                                     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-//  ┌─────────────────┐                               ┌─────────────────┐
-//  │   LINKS         │                               │    RECHTS       │
-//  ├─────────────────┤                               ├─────────────────┤
-//  │ EN/RST/BOOT     │                               │ 3.3V            │ ← Versorgung
-//  │                 │                               │                 │
-//  │ GPIO00  ⚠️      │ BOOT/Flash strapping          │ GPIO01  ❌      │ TX0/UART0
-//  │ GPIO02  ⚠️      │ strapping (low@boot)          │ GPIO03  ❌      │ RX0/UART0
-//  │ GPIO04  ✅      │ frei                          │ GPIO05  ✅      │ frei
-//  │ GPIO12  🔸      │ 1-Wire Temperatursensoren     │ GPIO13  ✅      │ frei
-//  │ GPIO14  🔸      │ LED Dimmer (PWM)              │ GPIO15  ⚠️      │ strapping (low)
-//  │ GPIO16  ✅      │ UART2 RX                      │ GPIO17  💡      │ OnBoard LED
-//  │ GPIO18  ❌      │ ETH_MDIO (LAN8720)            │ GPIO19  ❌      │ ETH_TXD0
-//  │ GPIO20  ✅      │ frei                          │ GPIO21  ❌      │ ETH_CLK_OUT
-//  │ GPIO22  ❌      │ ETH_RXD0 (LAN8720)            │ GPIO23  ❌      │ ETH_MDC
-//  │ GPIO24  ✅      │ frei                          │ GPIO25  ❌      │ ETH_TX_EN
-//  │ GPIO26  ❌      │ ETH_RX_ER (LAN8720)           │ GPIO27  ❌      │ ETH_CRS_DV
-//  │ GPIO32  📡      │ I2C SCL                       │ GPIO33  📡      │ I2C SDA
-//  │ GPIO34  📥      │ Input only/ADC                │ GPIO35  📥      │ Input only/ADC
-//  │ GPIO36  📥      │ Input only/ADC (VP)           │ GPIO37  ✅      │ frei
-//  │ GPIO38  ✅      │ frei                          │ GPIO39  📥      │ Input only/ADC
-//  │                 │                               │                 │
-//  │ GND             │ Masse                         │ GND             │ Masse
-//  └─────────────────┘                               └─────────────────┘
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │                       AKTUELLE GPIO ZUORDNUNG                              │
+// ├────────────┬───────────────┬───────────────────────────────────────────────┤
+// │   GPIO     │   Funktion    │               Beschreibung                    │
+// ├────────────┼───────────────┼───────────────────────────────────────────────┤
+// │ GPIO04  🔸 │ PWM           │ AC Dimmer Kronleuchter 220V                   │
+// │ GPIO05  🔸 │ 1-Wire        │ DS18B20 Temp-Sensor + 4.7kΩ Pull-up (sicher) │
+// │ GPIO13  🔸 │ IRQ Input     │ MCP23017 INTA/INTB (Schalter/Taster)         │
+// │ GPIO14  🔸 │ PWM           │ LED Dimmer Kellertreppe (MOSFET)             │
+// │ GPIO16  🔸 │ IRQ Input     │ MPR121 Wired-OR IRQ (3x Touch via L.Shift)   │
+// │ GPIO17  💡 │ Status LED    │ OnBoard LED (aktiv HIGH)                      │
+// │ GPIO32  📡 │ I²C SCL       │ Clock für alle I²C Geräte + 4.7kΩ PU         │
+// │ GPIO33  📡 │ I²C SDA       │ Daten für alle I²C Geräte + 4.7kΩ PU         │
+// ├────────────┼───────────────┼───────────────────────────────────────────────┤
+// │ GPIO12  ⚠️ │ RESERVE       │ ⚠️ KEIN Pull-up! Boot fail wenn HIGH!        │
+// │ GPIO15  ⚠️ │ Reserve       │ MTDO - Boot Debug Output (optional verfügbar)│
+// ├────────────┼───────────────┼───────────────────────────────────────────────┤
+// │ GPIO18  ❌ │ ETH_MDIO      │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO19  ❌ │ ETH_TXD0      │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO21  ❌ │ ETH_CLK_OUT   │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO22  ❌ │ ETH_RXD0      │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO23  ❌ │ ETH_MDC       │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO25  ❌ │ ETH_TX_EN     │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO26  ❌ │ ETH_RX_ER     │ LAN8720 PHY (reserviert - nicht frei!)       │
+// │ GPIO27  ❌ │ ETH_CRS_DV    │ LAN8720 PHY (reserviert - nicht frei!)       │
+// ├────────────┼───────────────┼───────────────────────────────────────────────┤
+// │ GPIO00  ⚠️ │ BOOT          │ MUSS LOW sein beim Flash! (Boot Mode)        │
+// │ GPIO01  ❌ │ TX0/UART0     │ Serial Debug (Flash/Upload - zum PC)         │
+// │ GPIO02  ⚠️ │ BOOT          │ Darf kein Pull-up beim Programmieren haben   │
+// │ GPIO03  ❌ │ RX0/UART0     │ Serial Debug (Flash/Upload - vom PC)         │
+// ├────────────┼───────────────┼───────────────────────────────────────────────┤
+// │ GPIO35  📥 │ Input only    │ ADC, kein Pull-up möglich, nur Eingang       │
+// │ GPIO36  📥 │ Input only    │ ADC, kein Pull-up möglich, nur Eingang       │
+// │ GPIO39  📥 │ Input only    │ ADC, kein Pull-up möglich, nur Eingang       │
+// └────────────┴───────────────┴───────────────────────────────────────────────┘
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                           AKTUELLE PIN BELEGUNG                              ║
-// ╚══════════════════════════════════════════════════════════════════════════════╝
-// 🔸 GPIO4   → AC Dimmer Kronleuchter (PWM, 220V Dimmer)
-// 🔸 GPIO12  → 1-Wire Bus Temperatursensoren (needs 4.7k pullup)
-// 🔸 GPIO14  → LED Dimmer Kellertreppe (PWM, MOSFET Gate)
-// 📡 GPIO32  → I2C SCL (MCP23017, PCA9535, MPR121)
-// 📡 GPIO33  → I2C SDA (MCP23017, PCA9535, MPR121)
-// 💡 GPIO17  → OnBoard Status LED (aktiv HIGH)
-
-// ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                              I2C GERÄTE                                     ║
+// ║                              I²C GERÄTE                                      ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 // MCP23017 Input Expander:  0x20    (16 digitale Ein-/Ausgänge für Schalter)
-//   GPA0-GPA7: IR-Switch Küche, Kreuzschaltungen, Reserve
+//   GPA0-GPA6: IR-Switch Küche, Kreuzschaltungen
+//   GPA7: Reserve (früher MPR121 IRQ, jetzt auf GPIO16)
 //   GPB0-GPB7: Reserve Eingänge (8 weitere Pins)
-// PCA9535 Relay Boards:  0x22, 0x23, 0x24 (Relais Ausgänge)
-// MPR121 Touch Sensors:  0x5A, 0x5C, 0x5D  (Capacitive Touch)
+//   INTA/INTB: Interrupt verbunden mit GPIO13
+//
+// PCA9535 Relay Boards:  0x22, 0x23, 0x24 (3x 8 Relais Ausgänge)
+//   Board A (0x22): R00-R07
+//   Board B (0x23): R08-R15
+//   Board C (0x24): R16-R23
+//
+// MPR121 Touch Sensors:  0x5A, 0x5C, 0x5D  (Capacitive Touch Panels)
+//   Panel 1 (0x5A): Tür Garten EG
+//   Panel 2 (0x5C): Säule Garten EG
+//   Panel 3 (0x5D): Säule Straße EG
+//   IRQ: Alle 3 IRQs kombiniert (Wired-OR) → GPIO16 via Level Shifter (5V→3.3V)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║                            PIN KATEGORIEN                                   ║
+// ║                     KRITISCHE BOOT-PIN-HINWEISE                              ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
-// ✅ FREI      → Verfügbar für weitere Funktionen
+// ⚠️ GPIO0:  Muss LOW sein beim Flash-Vorgang (Programmierung)
+// ⚠️ GPIO2:  Darf keinen Pull-up beim Programmieren haben
+// ⚠️ GPIO12: BOOT FAIL wenn HIGH beim Start! NIEMALS Pull-up verwenden!
+// ⚠️ GPIO15: Gibt Boot-Debug-Log aus (MTDO)
+//
+// ✅ Sichere GPIOs für Pull-ups: GPIO5, GPIO13, GPIO16, GPIO4, GPIO14
+//
 // 🔸 VERWENDET → Aktuell in diesem Projekt belegt
-// ❌ RESERVIERT→ Ethernet LAN8720 oder UART (nicht verwenden)
-// ⚠️ VORSICHT  → Boot-relevant oder spezielle Funktion
-// 📡 I2C       → Für I2C Bus reserviert
-// 📥 INPUT     → Nur Eingänge möglich (GPIO34-39)
+// ❌ RESERVIERT→ Ethernet LAN8720 oder UART (nicht verwenden!)
+// ⚠️ VORSICHT  → Boot-relevant oder spezielle Einschränkungen
+// 📡 I²C       → I²C Bus (SCL/SDA)
+// 📥 INPUT     → Nur Eingänge möglich (GPIO35, GPIO36, GPIO39)
 // 💡 STATUS    → OnBoard LED
 
 
@@ -86,6 +105,10 @@ String getNetworkStatus();
 #define SDA_PIN 33
 #define SCL_PIN 32
 
+// ---------- Interrupt Pins ----------
+#define MCP23017_IRQ_PIN 13   // GPIO13 für MCP23017 INTA/INTB (Schalter/Taster)
+#define MPR121_IRQ_PIN 16     // GPIO16 für MPR121 Wired-OR IRQ (3x Touch via Level Shifter)
+
 // ---------- PWM Setup für LED Dimmer ----------
 #define LED_TREPPE_PIN 14        // GPIO14 für MOSFET Kellertreppe LEDs
 #define KRONLEUCHTER_DIMMER_PIN 4  // GPIO4 für AC Dimmer Kronleuchter 220V
@@ -95,7 +118,8 @@ String getNetworkStatus();
 #define PWM_RESOLUTION 8         // 8-bit Resolution (0-255)
 
 // ---------- 1-Wire Setup für Temperatursensoren ----------
-#define ONE_WIRE_BUS 12      // GPIO12 für DS18B20 Temperatursensor (Schaltschrank)
+#define ONE_WIRE_BUS 5       // GPIO5 für DS18B20 Temperatursensor (Schaltschrank)
+                             // ⚠️ WICHTIG: GPIO12 NICHT verwenden! Boot fail wenn Pull-up HIGH!
 #define TEMPERATURE_PRECISION 10  // 10-bit = 0.25°C Auflösung
 
 // ---------- MCP23017 Adresse für Switches/Eingänge ----------
@@ -249,6 +273,20 @@ const unsigned long tempUpdateInterval = 60000; // 1 Minute
 unsigned long lastI2CRead = 0;
 const unsigned long i2cReadInterval = 100; // Eingänge nur alle 100ms lesen
 
+// --- MCP23017 Interrupt Handler ---
+volatile bool mcpInterruptFlag = false;  // Flag für Interrupt-Verarbeitung
+
+void IRAM_ATTR mcpISR() {
+  mcpInterruptFlag = true;  // Flag setzen, Verarbeitung in loop()
+}
+
+// --- MPR121 Interrupt Handler (VORBEREITET - auskommentiert) ---
+// volatile bool mpr121InterruptFlag = false;  // Flag für MPR121-Interrupt
+//
+// void IRAM_ATTR mpr121ISR() {
+//   mpr121InterruptFlag = true;  // Flag setzen, Verarbeitung in loop()
+// }
+
 // ======================================================
 // SETUP
 // ======================================================
@@ -325,15 +363,23 @@ void setup() {
   ArduinoOTA.begin();
   Serial.println("OTA Ready - Hostname: WT32-KG-Controller");
 
-  // MCP23017 Input Expander - DEAKTIVIERT (nicht angeschlossen)
-  /*
+  // MCP23017 Input Expander mit IRQ-Support
+  Serial.println("\n=== MCP23017 Input Expander Initialisierung ===");
   if (!mcpIn.begin_I2C(0x20)) {
-    Serial.println("ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
+    Serial.println("❌ ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
   } else {
-    Serial.println("MCP23017 initialisiert auf Adresse 0x20");
+    Serial.println("✅ MCP23017 initialisiert auf Adresse 0x20");
+    
+    // Interrupt Setup: Mirror INTA/INTB auf einen Pin, Active-Low, Open-Drain
+    mcpIn.setupInterrupts(true, false, LOW);
+    Serial.println("✅ MCP23017 Interrupts konfiguriert (mirrored, active-low)");
+    
+    // GPIO13 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
+    pinMode(MCP23017_IRQ_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(MCP23017_IRQ_PIN), mcpISR, FALLING);
+    Serial.println("✅ GPIO13 Interrupt-Handler registriert (FALLING edge)");
   }
-  */
-  Serial.println("MCP23017: Übersprungen (nicht angeschlossen)");
+  Serial.println("=========================================\n");
 
   // PCA9535 Relais starten
   Serial.println("\n=== PCA9535 Relais-Boards Initialisierung ===");
@@ -360,17 +406,24 @@ void setup() {
   }
   Serial.println("==========================================\n");
 
-  // Switches als INPUT - DEAKTIVIERT
-  /*
-  for (int i = 0; i < 8; i++) {
-    mcpIn.pinMode(i, INPUT);
+  // MCP23017 Port A: GPA0-GPA6 als INPUT mit Pull-up und Interrupt
+  Serial.println("=== MCP23017 Pin-Konfiguration ===");
+  for (int i = 0; i < 7; i++) {  // GPA0-GPA6 verwendet
+    mcpIn.pinMode(i, INPUT_PULLUP);
+    mcpIn.setupInterruptPin(i, CHANGE);  // Interrupt bei Änderung
   }
+  mcpIn.pinMode(7, INPUT_PULLUP);  // GPA7 Reserve
+  Serial.println("✅ Port A (GPA0-GPA6): INPUT_PULLUP + Interrupt on CHANGE");
+  
   // MCP23017 Port B: GPB0-GPB7 als Reserve Eingänge
   for (int i = 8; i < 16; i++) {
-    mcpIn.pinMode(i, INPUT);
+    mcpIn.pinMode(i, INPUT_PULLUP);
   }
-  */
-  Serial.println("MCP23017 Eingänge: Übersprungen");
+  Serial.println("✅ Port B (GPB0-GPB7): INPUT_PULLUP (Reserve)");
+  
+  // Initiale Interrupt-Register lesen (cleared by read)
+  mcpIn.readGPIOAB();
+  Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
   for (int i = 0; i < 8; i++) {
@@ -396,12 +449,24 @@ void setup() {
   setKronleuchterBrightness(0); // Starten mit Kronleuchter aus
 
   // TouchBoards - DEAKTIVIERT (nicht angeschlossen)
+  // ===============================================
+  // WENN AKTIVIERT: Uncomment die folgenden Zeilen
+  // ===============================================
+  // Serial.println("\n=== MPR121 Touch Panels Initialisierung ===");
   // initTouchBoards();
+  // 
+  // // GPIO16 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
+  // pinMode(MPR121_IRQ_PIN, INPUT_PULLUP);
+  // attachInterrupt(digitalPinToInterrupt(MPR121_IRQ_PIN), mpr121ISR, FALLING);
+  // Serial.println("✅ GPIO16 Interrupt-Handler registriert (FALLING edge)");
+  // Serial.println("✅ 3x MPR121 Boards bereit (Wired-OR IRQ über Level Shifter)");
+  // Serial.println("=========================================\n");
   Serial.println("TouchBoards: Übersprungen (nicht angeschlossen)");
 
-  // Temperatursensoren - DEAKTIVIERT
-  // initTemperatureSensors();
-  Serial.println("DS18B20 Sensoren: Übersprungen");
+  // Temperatursensoren initialisieren (DS18B20 auf GPIO5)
+  Serial.println("\n=== DS18B20 Temperatursensor Initialisierung ===");
+  initTemperatureSensors();
+  Serial.println("==============================================\n");
 
   // ESP-NOW Gateway initialisieren
   initESPNowGateway();
@@ -434,22 +499,22 @@ void loop() {
     lastTimeoutCheck = millis();
   }
   
-  // === NUR RELAIS-STEUERUNG AKTIV ===
-  // MCP23017, MPR121 und DS18B20 sind deaktiviert
-  
-  /* DEAKTIVIERT - Geräte nicht angeschlossen
-  // Eingänge und Touch-Events nur alle 100ms lesen (I2C-Throttling)
-  if (millis() - lastI2CRead >= i2cReadInterval) {
-    lastI2CRead = millis();
+  // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG ===
+  if (mcpInterruptFlag) {
+    mcpInterruptFlag = false;  // Flag zurücksetzen
+    
+    // Interrupt-Register lesen (clears interrupt)
+    uint16_t intcap = mcpIn.readGPIOAB();
+    
+    Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
+    Serial.print("INTCAP Register: 0x");
+    Serial.println(intcap, HEX);
     
     // Eingänge lesen (über MCP23017 Port A und B)
     for (int i = 0; i < 8; i++) {
       inputState[i] = mcpIn.digitalRead(i);      // Port A: GPA0-GPA7
       inputState[i + 8] = mcpIn.digitalRead(i + 8);  // Port B: GPB0-GPB7
     }
-
-    // Touch Events verarbeiten
-    handleTouchEvents();
 
     // IR-Switch Küche überwachen
     handleIRSwitchKitchen();
@@ -458,13 +523,26 @@ void loop() {
     handleKreuzschaltungEG();
     handleKreuzschaltungKG();
   }
+  
+  // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
+  // WENN AKTIVIERT: Uncomment die folgenden Zeilen und entferne Polling
+  // if (mpr121InterruptFlag) {
+  //   mpr121InterruptFlag = false;  // Flag zurücksetzen
+  //   Serial.println("⚡ MPR121 Interrupt ausgelöst!");
+  //   handleTouchEvents();  // Touch-Events verarbeiten
+  // }
+  
+  // Touch Events verarbeiten (Polling-basiert, alle 100ms) - DEAKTIVIERT
+  // if (millis() - lastI2CRead >= i2cReadInterval) {
+  //   lastI2CRead = millis();
+  //   handleTouchEvents();
+  // }
 
   // Temperaturen alle 1 Minute aktualisieren
   if (millis() - lastTempUpdate > tempUpdateInterval) {
     updateTemperatures();
     lastTempUpdate = millis();
   }
-  */
 
   // --- Sicherheits-Timeout für Rollos (5 Minuten) ---
   // Verhindert dass Rollos bei Fehler endlos laufen
@@ -1185,7 +1263,7 @@ String getTemperatureHTML() {
   html += "<th>Komponente</th><th>Wert</th><th>Status</th></tr>";
   
   html += "<tr>";
-  html += "<td>DS18B20 Sensor (GPIO12)</td>";
+  html += "<td>DS18B20 Sensor (GPIO5)</td>";
   
   if (schaltschrankTemp != -999.0) {
     String tempColor = "black";
