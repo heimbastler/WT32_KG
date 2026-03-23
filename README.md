@@ -6,7 +6,7 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 ## ⚙️ Hardware
 
 ### 🖥️ Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
-<img src="pictures/wt32_pinout_large.png" alt="WT32-ETH01 Pinout" width="30%">
+<img src="pictures/WT32-ETH01_pinout_LL.png" alt="WT32-ETH01 Pinout" width="100%">
 
 **Features:**
 - Ethernet-Verbindung über LAN8720 PHY
