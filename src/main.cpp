@@ -698,7 +698,24 @@ String getHTMLHeader(String activeTab) {
   html += "table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px;}";
   html += "td,th{border:1px solid #ddd;padding:5px;text-align:center;}";
   html += "th{background:#f0f0f0;font-weight:bold;}";
-  html += "</style></head><body>";
+  html += "</style>";
+  
+  // JavaScript für AJAX-Requests ohne Seiten-Reload
+  html += "<script>";
+  html += "function toggleRelay(r){";
+  html += "fetch('/toggle?r='+r).then(()=>{";
+  // Button visuell updaten ohne Reload
+  html += "var btn=event.target;";
+  html += "if(btn.classList.contains('btn-on')){";
+  html += "btn.classList.remove('btn-on');btn.classList.add('btn-off');";
+  html += "}else if(btn.classList.contains('btn-off')){";
+  html += "btn.classList.remove('btn-off');btn.classList.add('btn-on');";
+  html += "}";
+  html += "});";
+  html += "}";
+  html += "</script>";
+  
+  html += "</head><body>";
   
   html += "<div class='container'>";
   html += "<h2>🏠 WT32-KG Smart Home</h2>";
@@ -774,8 +791,8 @@ void handleHome() {
   String fensterHochClass = (relayState[0] == 1) ? "btn-neutral" : "btn-rollo";
   String fensterRunterClass = (relayState[1] == 1) ? "btn-neutral" : "btn-rollo";
   
-  html += "<a href='/toggle?r=0' class='btn " + fensterHochClass + "'>" + fensterHochSymbol + "</a>";
-  html += "<a href='/toggle?r=1' class='btn " + fensterRunterClass + "'>" + fensterRunterSymbol + "</a>";
+  html += "<button onclick='toggleRelay(0)' class='btn " + fensterHochClass + "'>" + fensterHochSymbol + "</button>";
+  html += "<button onclick='toggleRelay(1)' class='btn " + fensterRunterClass + "'>" + fensterRunterSymbol + "</button>";
   
   String fensterStatus = "";
   if (relayState[0] == 1) fensterStatus = " (Fährt hoch)";
@@ -794,8 +811,8 @@ void handleHome() {
   String tuerHochClass = (relayState[2] == 1) ? "btn-neutral" : "btn-rollo";
   String tuerRunterClass = (relayState[3] == 1) ? "btn-neutral" : "btn-rollo";
   
-  html += "<a href='/toggle?r=2' class='btn " + tuerHochClass + "'>" + tuerHochSymbol + "</a>";
-  html += "<a href='/toggle?r=3' class='btn " + tuerRunterClass + "'>" + tuerRunterSymbol + "</a>";
+  html += "<button onclick='toggleRelay(2)' class='btn " + tuerHochClass + "'>" + tuerHochSymbol + "</button>";
+  html += "<button onclick='toggleRelay(3)' class='btn " + tuerRunterClass + "'>" + tuerRunterSymbol + "</button>";
   
   String tuerStatus = "";
   if (relayState[2] == 1) tuerStatus = " (Fährt hoch)";
@@ -812,44 +829,41 @@ void handleHome() {
   
   // R04 - Aussenlampe Garten
   String aussenGartenClass = relayState[4] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=4' class='btn " + aussenGartenClass + "'>💡 Aussenlampe Garten (R04)</a><br>";
+  html += "<button onclick='toggleRelay(4)' class='btn " + aussenGartenClass + "'>💡 Aussenlampe Garten (R04)</button><br>";
   
   // R05 - Steinlampe
   String steinlampeClass = relayState[5] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=5' class='btn " + steinlampeClass + "'>💡 Steinlampe (R05)</a><br>";
+  html += "<button onclick='toggleRelay(5)' class='btn " + steinlampeClass + "'>💡 Steinlampe (R05)</button><br>";
   
   // R06 - KG Flurlampe
   String kgFlurClass = relayState[6] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=6' class='btn " + kgFlurClass + "'>💡 KG Flurlampe (R06)</a><br>";
+  html += "<button onclick='toggleRelay(6)' class='btn " + kgFlurClass + "'>💡 KG Flurlampe (R06)</button><br>";
   
   // R07 - Kuechenarbeitslampe
   String kuechenArbeitClass = relayState[7] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=7' class='btn " + kuechenArbeitClass + "'>💡 Kuechenarbeitslampe (R07)</a><br>";
+  html += "<button onclick='toggleRelay(7)' class='btn " + kuechenArbeitClass + "'>💡 Kuechenarbeitslampe (R07)</button><br>";
   
   // R08 - Kuechenlampe
   String kuechenClass = relayState[8] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=8' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08)</a><br>";
+  html += "<button onclick='toggleRelay(8)' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08)</button><br>";
   
   // R09 - EG Flurlampe
   String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=9' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09)</a><br>";
+  html += "<button onclick='toggleRelay(9)' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09)</button><br>";
   
   // R10 - Traegerlampen
   String traegerClass = relayState[10] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=10' class='btn " + traegerClass + "'>💡 Traegerlampen (R10)</a><br>";
+  html += "<button onclick='toggleRelay(10)' class='btn " + traegerClass + "'>💡 Traegerlampen (R10)</button><br>";
   
   // R11 - Kronleuchter (mit Dimmerfunktion)
   String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
   acPercent = (acDimmerBrightness * 100) / 255;  // Variable wurde bereits weiter oben deklariert
-  html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
+  html += "<button onclick='toggleRelay(11)' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
   if (relayState[11]) {
-    html += " (" + String(acPercent) + "%)";
+    html += " (" + String(acPercent) + "%)";  
   }
-  html += "</a><br>";
-  
-  // R12 - Reserve Wohnzimmer
-  String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
-  html += "<a href='/toggle?r=12' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</a>";
+  html += "</button><br>";
+  html += "<button onclick='toggleRelay(12)' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</button>";
   html += "</div>";
   
   html += "</div>";
@@ -862,14 +876,14 @@ void handleHome() {
   for (int i = 13; i < 15; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
     String relaisStatus = relayState[i] ? "EIN" : "AUS";
-    html += "<a href='/toggle?r=" + String(i) + "' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</a><br>";
+    html += "<button onclick='toggleRelay(" + String(i) + ")' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</button><br>";
   }
   
   // Freie Relais 15-23
   for (int i = 15; i < 24; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
     String relaisStatus = relayState[i] ? "EIN" : "AUS";
-    html += "<a href='/toggle?r=" + String(i) + "' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</a>";
+    html += "<button onclick='toggleRelay(" + String(i) + ")' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</button>";
     if (i % 3 == 2) html += "<br>"; // Umbruch nach 3 Buttons
   }
   
@@ -1029,8 +1043,9 @@ void handleToggle() {
     Serial.print(0x22 + chip, HEX);
     Serial.print("), Pin: ");
     Serial.print(pin);
-    Serial.print(", New State: ");
-    Serial.println(relayState[idx] ? "ON (HIGH)" : "OFF (LOW)");
+  // AJAX-Support: Kein Redirect, nur Status 200 zurück
+  // Browser bleibt auf aktueller Seite mit aktueller Scroll-Position
+  server.send(200, "text/plain", "OK"n(relayState[idx] ? "ON (HIGH)" : "OFF (LOW)");
     
     if (chip == 0) {
       pcaRel1.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
