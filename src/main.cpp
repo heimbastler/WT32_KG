@@ -256,6 +256,7 @@ void handleRoot();
 void handleHome();
 void handleESPNow();
 void handleToggle();
+void handleInputs();
 void handleLEDDimmer();
 void handleACDimmer();
 void handlePairing();
@@ -555,6 +556,7 @@ void setup() {
   server.on("/home", handleHome);
   server.on("/espnow", handleESPNow);
   server.on("/toggle", handleToggle);
+  server.on("/inputs", handleInputs);
   server.on("/led", handleLEDDimmer);
   server.on("/kronleuchter", handleACDimmer);
   server.on("/pairing", handlePairing);
@@ -781,6 +783,24 @@ String getHTMLHeader(String activeTab) {
   html += "console.error('Error:',error);";
   html += "});";
   html += "}";
+  // JavaScript für Auto-Refresh der Eingangszustände
+  html += "function updateInputs(){";
+  html += "fetch('/inputs').then(function(response){";
+  html += "return response.json();";
+  html += "}).then(function(data){";
+  html += "for(var i=0;i<16;i++){";
+  html += "var cell=document.getElementById('input-'+i+'-status');";
+  html += "if(cell){";
+  html += "var state=data.inputs[i];";
+  html += "cell.textContent=state?'HIGH':'LOW';";
+  html += "cell.style.backgroundColor=state?'lightgreen':'lightcoral';";
+  html += "}";
+  html += "}";
+  html += "}).catch(function(error){";
+  html += "console.error('Input update error:',error);";
+  html += "});";
+  html += "}";
+  html += "setInterval(updateInputs,500);";  // Update alle 500ms
   html += "</script>";
   
   html += "</head><body>";
@@ -977,7 +997,7 @@ void handleHome() {
     html += "<tr>";
     html += "<td>IN" + String(i) + "</td>";
     html += "<td>" + inputLabels[i] + "</td>";
-    html += "<td style='background-color:" + color + ";font-weight:bold;'>" + status + "</td>";
+    html += "<td id='input-" + String(i) + "-status' style='background-color:" + color + ";font-weight:bold;'>" + status + "</td>";
     html += "</tr>";
   }
   html += "</table>";
@@ -1134,6 +1154,17 @@ void handleToggle() {
   // AJAX-Support: JSON mit aktuellem Status zurückgeben
   // Browser kann Button-Status dynamisch updaten ohne Seiten-Reload
   String response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + "}";
+  server.send(200, "application/json", response);
+}
+
+void handleInputs() {
+  // JSON mit allen 16 Eingangszuständen zurückgeben
+  String response = "{\"inputs\":[";
+  for (int i = 0; i < 16; i++) {
+    response += String(inputState[i]);
+    if (i < 15) response += ",";
+  }
+  response += "]}";
   server.send(200, "application/json", response);
 }
 
