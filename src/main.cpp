@@ -254,7 +254,7 @@ void handleHome();
 void handleESPNow();
 void handleToggle();
 void handleLEDDimmer();
-void handleKronleuchterDimmer();
+void handleACDimmer();
 void handlePairing();
 void handleClientDetail();
 void handleRemoveClient();
@@ -457,14 +457,14 @@ void setup() {
   }
 
   // PWM für LED Dimmer konfigurieren
-  ledcSetup(PWM_CHANNEL_TREPPE, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(LED_TREPPE_PIN, PWM_CHANNEL_TREPPE);
-  setLEDTreppeBrightness(0); // Starten mit LEDs aus
+  ledcSetup(PWM_CHANNEL_LED, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(LED_DIMMER_PIN, PWM_CHANNEL_LED);
+  setLEDDimmerBrightness(0); // Starten mit LEDs aus
   
-  // PWM für Kronleuchter AC Dimmer konfigurieren
-  ledcSetup(PWM_CHANNEL_KRONLEUCHTER, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(KRONLEUCHTER_DIMMER_PIN, PWM_CHANNEL_KRONLEUCHTER);
-  setKronleuchterBrightness(0); // Starten mit Kronleuchter aus
+  // PWM für AC Dimmer konfigurieren
+  ledcSetup(PWM_CHANNEL_AC, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(AC_DIMMER_PIN, PWM_CHANNEL_AC);
+  setACDimmerBrightness(0); // Starten mit Kronleuchter aus
 
   // TouchBoards - DEAKTIVIERT (nicht angeschlossen)
   // ===============================================
@@ -495,7 +495,7 @@ void setup() {
   server.on("/espnow", handleESPNow);
   server.on("/toggle", handleToggle);
   server.on("/led", handleLEDDimmer);
-  server.on("/kronleuchter", handleKronleuchterDimmer);
+  server.on("/kronleuchter", handleACDimmer);
   server.on("/pairing", handlePairing);
   server.on("/client", handleClientDetail);
   server.on("/remove_client", handleRemoveClient);
@@ -797,7 +797,7 @@ void handleHome() {
   
   // R11 - Kronleuchter (mit Dimmerfunktion)
   String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
-  int acPercent = (acDimmerBrightness * 100) / 255;
+  acPercent = (acDimmerBrightness * 100) / 255;
   html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
   if (relayState[11]) {
     html += " (" + String(acPercent) + "%)";
@@ -1222,12 +1222,12 @@ void handleACDimmer() {
 
 void toggleKronleuchter() {
   // Kronleuchter toggle: AUS → 50% → AUS
-  if (kronleuchterBrightness == 0) {
-    setKronleuchterBrightness(127); // 50% Helligkeit
+  if (acDimmerBrightness == 0) {
+    setACDimmerBrightness(127); // 50% Helligkeit
     relayState[11] = 1; // R11 EIN
     pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
   } else {
-    setKronleuchterBrightness(0); // AUS
+    setACDimmerBrightness(0); // AUS
     relayState[11] = 0; // R11 AUS
     pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
   }
@@ -1238,19 +1238,19 @@ void dimKronleuchter(bool dimUp) {
   
   if (dimUp) {
     // Heller dimmen
-    if (kronleuchterBrightness < 240) {
-      setKronleuchterBrightness(kronleuchterBrightness + dimStep);
-      if (kronleuchterBrightness > 0) {
+    if (acDimmerBrightness < 240) {
+      setACDimmerBrightness(acDimmerBrightness + dimStep);
+      if (acDimmerBrightness > 0) {
         relayState[11] = 1; // R11 EIN wenn > 0
         pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
       }
     }
   } else {
     // Dunkler dimmen
-    if (kronleuchterBrightness > dimStep) {
-      setKronleuchterBrightness(kronleuchterBrightness - dimStep);
+    if (acDimmerBrightness > dimStep) {
+      setACDimmerBrightness(acDimmerBrightness - dimStep);
     } else {
-      setKronleuchterBrightness(0); // Komplett aus
+      setACDimmerBrightness(0); // Komplett aus
       relayState[11] = 0; // R11 AUS
       pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
     }

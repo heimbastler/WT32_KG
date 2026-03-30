@@ -313,16 +313,27 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 ┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                           LAN8720 PHY - RESERVIERTE GPIO PINS                                                    │
-├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                                                  │
-│  GPIO18: ETH_MDIO       ║  GPIO19: ETH_TXD0      ║  GPIO21: ETH_CLK_OUT  ║  GPIO22: ETH_RXD0                                     │
-│  GPIO23: ETH_MDC        ║  GPIO25: ETH_TX_EN     ║  GPIO26: ETH_RX_ER    ║  GPIO27: ETH_CRS_DV                                   │
-│                                                                                                                                  │
-│       DIESE PINS DÜRFEN NICHT FÜR ANDERE FUNKTIONEN GENUTZT WERDEN!                                                              │
-│                                                                                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                     🔒 LAN8720 PHY ETHERNET - RESERVIERTE GPIO PINS (GEPRÜFT & FUNKTIONIEREND)                                  ║
+║                                      ⚠️  DIESE KONFIGURATION NIEMALS ÄNDERN! ⚠️                                                  ║
+╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                                                                  ║
+║  ✅ Konfiguration: ETH.begin()  (ohne Parameter - verwendet WT32-ETH01 Board-Defaults)                                          ║
+║                                                                                                                                  ║
+║  Hardware-reservierte GPIOs vom LAN8720 PHY:                                                                                     ║
+║  ┌──────────────────────────────────────────────────────────────────────────────────────┐                                      ║
+║  │  GPIO0:  ETH_REFCLK0  (50MHz Clock Input)    │  GPIO19: ETH_TXD0      (TX Data 0)    │                                      ║
+║  │  GPIO18: ETH_MDIO     (Management Data I/O)  │  GPIO21: ETH_CLK_OUT   (Clock Out)    │                                      ║
+║  │  GPIO22: ETH_RXD0     (RX Data 0)            │  GPIO23: ETH_MDC       (Management)   │                                      ║
+║  │  GPIO25: ETH_TX_EN    (TX Enable)            │  GPIO26: ETH_RX_ER     (RX Error)     │                                      ║
+║  │  GPIO27: ETH_CRS_DV   (Carrier Sense)        │                                       │                                      ║
+║  └──────────────────────────────────────────────────────────────────────────────────────┘                                      ║
+║                                                                                                                                  ║
+║  🔴 KRITISCH: Diese Pins sind Hardware-gebunden und dürfen NICHT für User-Code verwendet werden!                                ║
+║  🔴 NIEMALS ETH.begin() mit manuellen GPIO-Parametern aufrufen - Board-Defaults verwenden!                                      ║
+║  🔴 Status: Getestet am 30.03.2026 - Web-UI funktioniert - KEINE ÄNDERUNGEN MEHR!                                               ║
+║                                                                                                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 **I²C-Adressbelegung:**

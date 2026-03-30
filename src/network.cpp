@@ -15,11 +15,15 @@ String getNetworkStatus();
 
 // ======================================================
 // Network Initialisierung (Ethernet Only)
+// ⚠️  ETHERNET GPIO KONFIGURATION - NIEMALS ÄNDERN! ⚠️
 // ======================================================
 void initNetworking() {
   Serial.println("=== Network Setup (Ethernet Only) ===");
   
-  // Ethernet initialisieren
+  // ✅ GEPRÜFT & FUNKTIONIEREND (30.03.2026)
+  // ETH.begin() ohne Parameter verwendet WT32-ETH01 Board-Defaults
+  // Hardware-reservierte GPIOs: 0, 18, 19, 21, 22, 23, 25, 26, 27
+  // 🔴 NIEMALS mit manuellen GPIO-Parametern aufrufen!
   ETH.begin();
   
   Serial.println("Warte auf Ethernet-Verbindung...");
