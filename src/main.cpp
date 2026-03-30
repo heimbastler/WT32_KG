@@ -498,17 +498,31 @@ void setup() {
   Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
+  // Erst alle pinMode setzen
   for (int i = 0; i < 8; i++) {
     pcaRel1.pinMode(i, OUTPUT);
-    pcaRel1.digitalWrite(i, LOW);
     pcaRel2.pinMode(i, OUTPUT);
-    pcaRel2.digitalWrite(i, LOW);
     pcaRel3.pinMode(i, OUTPUT);
+  }
+  delay(10);  // Kurze Verzögerung für I2C-Stabilität
+  
+  // Dann alle auf LOW (AUS) setzen
+  for (int i = 0; i < 8; i++) {
+    pcaRel1.digitalWrite(i, LOW);
+    pcaRel2.digitalWrite(i, LOW);
     pcaRel3.digitalWrite(i, LOW);
   }
+  
+  // Relay State Array initialisieren
   for (int i = 0; i < 24; i++) {
     relayState[i] = 0;
   }
+  
+  // Extra: R06 und R09 nochmals explizit AUS (bekannte Problempins)
+  delay(10);
+  pcaRel1.digitalWrite(6, LOW);  // R06 - KG Flurlampe
+  pcaRel2.digitalWrite(1, LOW);  // R09 - EG Flurlampe
+  Serial.println("✅ Alle Relais initialisiert (R06 & R09 explizit AUS)");
 
   // PWM für LED Dimmer konfigurieren
   ledcSetup(PWM_CHANNEL_LED, PWM_FREQ, PWM_RESOLUTION);
