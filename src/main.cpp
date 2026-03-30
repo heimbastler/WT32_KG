@@ -863,6 +863,9 @@ void handleHome() {
     html += " (" + String(acPercent) + "%)";  
   }
   html += "</button><br>";
+  
+  // R12 - Reserve Wohnzimmer
+  String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
   html += "<button onclick='toggleRelay(12)' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</button>";
   html += "</div>";
   
@@ -1043,9 +1046,8 @@ void handleToggle() {
     Serial.print(0x22 + chip, HEX);
     Serial.print("), Pin: ");
     Serial.print(pin);
-  // AJAX-Support: Kein Redirect, nur Status 200 zurück
-  // Browser bleibt auf aktueller Seite mit aktueller Scroll-Position
-  server.send(200, "text/plain", "OK"n(relayState[idx] ? "ON (HIGH)" : "OFF (LOW)");
+    Serial.print(", New State: ");
+    Serial.println(relayState[idx] ? "ON (HIGH)" : "OFF (LOW)");
     
     if (chip == 0) {
       pcaRel1.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
@@ -1060,6 +1062,11 @@ void handleToggle() {
       Serial.println("  -> Written to pcaRel3");
     }
   }
+  
+  // AJAX-Support: Kein Redirect, nur Status 200 zurück
+  // Browser bleibt auf aktueller Seite mit aktueller Scroll-Position
+  server.send(200, "text/plain", "OK");
+}
   
   server.sendHeader("Location", "/");
   server.send(303);
