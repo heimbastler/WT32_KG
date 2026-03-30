@@ -506,27 +506,32 @@ void setup() {
   Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
-  // Erst alle pinMode setzen
-  for (int i = 0; i < 8; i++) {
-    pcaRel1.pinMode(i, OUTPUT);
-    pcaRel2.pinMode(i, OUTPUT);
-    pcaRel3.pinMode(i, OUTPUT);
-  }
-  delay(10);  // Kurze Verzögerung für I2C-Stabilität
+  // KRITISCH: Output-Register ZUERST auf LOW setzen, BEVOR pinMode(OUTPUT)
+  // Dies verhindert Glitches beim Umschalten von INPUT auf OUTPUT
+  Serial.println("⚡ Initialisiere Relais (glitch-frei)...");
   
-  // Dann alle auf LOW (AUS) setzen
+  // Schritt 1: Output-Register auf LOW setzen (während Pins noch INPUT sind)
   for (int i = 0; i < 8; i++) {
     pcaRel1.digitalWrite(i, LOW);
     pcaRel2.digitalWrite(i, LOW);
     pcaRel3.digitalWrite(i, LOW);
   }
+  delay(50);  // Warten bis Output-Register gesetzt sind
+  
+  // Schritt 2: Pins auf OUTPUT umschalten (jetzt bereits auf LOW)
+  for (int i = 0; i < 8; i++) {
+    pcaRel1.pinMode(i, OUTPUT);
+    pcaRel2.pinMode(i, OUTPUT);
+    pcaRel3.pinMode(i, OUTPUT);
+  }
+  delay(10);
   
   // Relay State Array initialisieren
   for (int i = 0; i < 24; i++) {
     relayState[i] = 0;
   }
   
-  // Extra: R06 und R09 nochmals explizit AUS (bekannte Problempins)
+  // Schritt 3: Sicherheits-Check - nochmals explizit LOW
   delay(10);
   pcaRel1.digitalWrite(6, LOW);  // R06 - KG Flurlampe
   pcaRel2.digitalWrite(1, LOW);  // R09 - EG Flurlampe
