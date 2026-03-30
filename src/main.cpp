@@ -395,26 +395,25 @@ void setup() {
   }
   Serial.println("==================\n");
 
-  // MCP23017 Input Expander - DEAKTIVIERT (nicht angeschlossen)
+  // MCP23017 Input Expander
   // ============================================================
-  // Serial.println("\n=== MCP23017 Input Expander Initialisierung ===");
-  // if (!mcpIn.begin_I2C(0x20)) {
-  //   Serial.println("❌ ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
-  // } else {
-  //   Serial.println("✅ MCP23017 initialisiert auf Adresse 0x20");
-  //   
-  //   // Debugging: Erste Lese zu sehen ob I2C funktioniert
-  //   uint16_t testRead = mcpIn.readGPIOAB();
-  //   Serial.print("🔍 Test Reading GPIO: 0x");
-  //   Serial.println(testRead, HEX);
-  //   
-  //   // GPIO39 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
-  //   pinMode(MCP23017_IRQ_PIN, INPUT_PULLUP);
-  //   attachInterrupt(digitalPinToInterrupt(MCP23017_IRQ_PIN), mcpISR, FALLING);
-  //   Serial.println("✅ GPIO39 Interrupt-Handler registriert (FALLING edge)");
-  // }
-  // Serial.println("=========================================\n");
-  Serial.println("MCP23017: Übersprungen (nicht angeschlossen)");
+  Serial.println("\n=== MCP23017 Input Expander Initialisierung ===");
+  if (!mcpIn.begin_I2C(0x20)) {
+    Serial.println("❌ ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
+  } else {
+    Serial.println("✅ MCP23017 initialisiert auf Adresse 0x20");
+    
+    // Debugging: Erste Lese zu sehen ob I2C funktioniert
+    uint16_t testRead = mcpIn.readGPIOAB();
+    Serial.print("🔍 Test Reading GPIO: 0x");
+    Serial.println(testRead, HEX);
+    
+    // GPIO39 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
+    pinMode(MCP23017_IRQ_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(MCP23017_IRQ_PIN), mcpISR, FALLING);
+    Serial.println("✅ GPIO39 Interrupt-Handler registriert (FALLING edge)");
+  }
+  Serial.println("=========================================\n");
 
   // PCA9535 Relais starten
   Serial.println("\n=== PCA9535 Relais-Boards Initialisierung ===");
@@ -441,61 +440,61 @@ void setup() {
   }
   Serial.println("==========================================\n");
 
-  // MCP23017 Pin-Konfiguration - DEAKTIVIERT (nicht angeschlossen)
+  // MCP23017 Pin-Konfiguration
   // ================================================================
-  // Serial.println("=== MCP23017 Pin-Konfiguration ===");
-  // 
-  // // Port A (GPA0-GPA7): INPUT mit aktivierten Pull-ups
-  // for (int i = 0; i < 8; i++) {
-  //   mcpIn.pinMode(i, INPUT);
-  //   // 🔴 WICHTIG: GPPU = Internal 100kΩ Pull-up MANUELL via Register setzen
-  //   // Die Adafruit-Lib könnte INPUT_PULLUP nicht korrekt setzen!
-  // }
-  // Serial.println("✅ Port A (GPA0-GPA7): INPUT konfiguriert");
-  // 
-  // // Port B (GPB0-GPB7): INPUT (Reserve)
-  // for (int i = 8; i < 16; i++) {
-  //   mcpIn.pinMode(i, INPUT);
-  // }
-  // Serial.println("✅ Port B (GPB0-GPB7): INPUT (Reserve) konfiguriert");
-  // 
-  // // 🔴 KRITISCH: Pull-ups via MCP23017 Registers aktivieren (nicht via Adafruit-Lib!)
-  // // GPPU Register (0x0C für Port A, 0x0D für Port B): 1 = Pull-up ON
-  // Wire.beginTransmission(0x20);
-  // Wire.write(0x0C);  // GPPUA Register (ziehen bei GPA0-GPA7)
-  // Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
-  // Wire.endTransmission();
-  // 
-  // Wire.beginTransmission(0x20);
-  // Wire.write(0x0D);  // GPPUB Register (ziehen bei GPB0-GPB7)
-  // Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
-  // Wire.endTransmission();
-  // Serial.println("✅ GPPU Register (0x0C, 0x0D): Pull-ups aktiviert");
-  // 
-  // // 🔴 KRITISCH: Interrupt-Register konfigurieren (Change Detection)
-  // // GPINTEN Register (0x04 für Port A, 0x05 für Port B): Enable Interrupts
-  // Wire.beginTransmission(0x20);
-  // Wire.write(0x04);  // GPINTENA Register
-  // Wire.write(0xFF);  // Alle 8 Pins GPA0-GPA7 interrupt-enabled
-  // Wire.endTransmission();
-  // 
-  // Wire.beginTransmission(0x20);
-  // Wire.write(0x05);  // GPINTENB Register
-  // Wire.write(0x00);  // Port B: keine Interrupts (Reserve)
-  // Wire.endTransmission();
-  // 
-  // // INTCON Register (0x08/0x09): 0 = compare to previous value (change detection)
-  // Wire.beginTransmission(0x20);
-  // Wire.write(0x08);  // INTCONA Register
-  // Wire.write(0x00);  // 0 = Trigger bei Änderung (nicht compare to DEFVAL)
-  // Wire.endTransmission();
-  // Serial.println("✅ Interrupt Register (GPINTEN, INTCON): Konfiguriert für Change Detection");
-  // 
-  // // Einmal durchlesen um initial Clear zu machen
-  // uint16_t initialRead = mcpIn.readGPIOAB();
-  // Serial.print("📊 Initial GPIO Reading: 0x");
-  // Serial.println(initialRead, HEX);
-  // Serial.println("=========================================\n");
+  Serial.println("=== MCP23017 Pin-Konfiguration ===");
+  
+  // Port A (GPA0-GPA7): INPUT mit aktivierten Pull-ups
+  for (int i = 0; i < 8; i++) {
+    mcpIn.pinMode(i, INPUT);
+    // 🔴 WICHTIG: GPPU = Internal 100kΩ Pull-up MANUELL via Register setzen
+    // Die Adafruit-Lib könnte INPUT_PULLUP nicht korrekt setzen!
+  }
+  Serial.println("✅ Port A (GPA0-GPA7): INPUT konfiguriert");
+  
+  // Port B (GPB0-GPB7): INPUT (Reserve)
+  for (int i = 8; i < 16; i++) {
+    mcpIn.pinMode(i, INPUT);
+  }
+  Serial.println("✅ Port B (GPB0-GPB7): INPUT (Reserve) konfiguriert");
+  
+  // 🔴 KRITISCH: Pull-ups via MCP23017 Registers aktivieren (nicht via Adafruit-Lib!)
+  // GPPU Register (0x0C für Port A, 0x0D für Port B): 1 = Pull-up ON
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0C);  // GPPUA Register (ziehen bei GPA0-GPA7)
+  Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
+  Wire.endTransmission();
+  
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0D);  // GPPUB Register (ziehen bei GPB0-GPB7)
+  Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
+  Wire.endTransmission();
+  Serial.println("✅ GPPU Register (0x0C, 0x0D): Pull-ups aktiviert");
+  
+  // 🔴 KRITISCH: Interrupt-Register konfigurieren (Change Detection)
+  // GPINTEN Register (0x04 für Port A, 0x05 für Port B): Enable Interrupts
+  Wire.beginTransmission(0x20);
+  Wire.write(0x04);  // GPINTENA Register
+  Wire.write(0xFF);  // Alle 8 Pins GPA0-GPA7 interrupt-enabled
+  Wire.endTransmission();
+  
+  Wire.beginTransmission(0x20);
+  Wire.write(0x05);  // GPINTENB Register
+  Wire.write(0x00);  // Port B: keine Interrupts (Reserve)
+  Wire.endTransmission();
+  
+  // INTCON Register (0x08/0x09): 0 = compare to previous value (change detection)
+  Wire.beginTransmission(0x20);
+  Wire.write(0x08);  // INTCONA Register
+  Wire.write(0x00);  // 0 = Trigger bei Änderung (nicht compare to DEFVAL)
+  Wire.endTransmission();
+  Serial.println("✅ Interrupt Register (GPINTEN, INTCON): Konfiguriert für Change Detection");
+  
+  // Einmal durchlesen um initial Clear zu machen
+  uint16_t initialRead = mcpIn.readGPIOAB();
+  Serial.print("📊 Initial GPIO Reading: 0x");
+  Serial.println(initialRead, HEX);
+  Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
   for (int i = 0; i < 8; i++) {
@@ -623,34 +622,34 @@ void loop() {
   //   handleKreuzschaltungEG();
   //   handleKreuzschaltungKG();
   // }
-  // 
-  // // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG ===
-  // if (mcpInterruptFlag) {
-  //   mcpInterruptFlag = false;  // Flag zurücksetzen
-  //   Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
-  //   
-  //   // GPIO-Status lesen (cleared automatisch den Interrupt)
-  //   uint16_t gpio_ab = mcpIn.readGPIOAB();
-  //   uint8_t portA = gpio_ab & 0xFF;
-  //   uint8_t portB = (gpio_ab >> 8) & 0xFF;
-  //   
-  //   // Debug: Welche Pins haben sich geändert
-  //   Serial.print("📊 GPIO: Port A=0x");
-  //   Serial.print(portA, HEX);
-  //   Serial.print(" Port B=0x");
-  //   Serial.println(portB, HEX);
-  //   
-  //   // Eingänge in inputState[] speichern (für Web-UI)
-  //   for (int i = 0; i < 8; i++) {
-  //     inputState[i] = (portA >> i) & 1;
-  //     inputState[i + 8] = (portB >> i) & 1;
-  //   }
-  //   
-  //   // Schalter-Logik verarbeiten
-  //   handleIRSwitchKitchen();
-  //   handleKreuzschaltungEG();
-  //   handleKreuzschaltungKG();
-  // }
+  
+  // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG ===
+  if (mcpInterruptFlag) {
+    mcpInterruptFlag = false;  // Flag zurücksetzen
+    Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
+    
+    // GPIO-Status lesen (cleared automatisch den Interrupt)
+    uint16_t gpio_ab = mcpIn.readGPIOAB();
+    uint8_t portA = gpio_ab & 0xFF;
+    uint8_t portB = (gpio_ab >> 8) & 0xFF;
+    
+    // Debug: Welche Pins haben sich geändert
+    Serial.print("📊 GPIO: Port A=0x");
+    Serial.print(portA, HEX);
+    Serial.print(" Port B=0x");
+    Serial.println(portB, HEX);
+    
+    // Eingänge in inputState[] speichern (für Web-UI)
+    for (int i = 0; i < 8; i++) {
+      inputState[i] = (portA >> i) & 1;
+      inputState[i + 8] = (portB >> i) & 1;
+    }
+    
+    // Schalter-Logik verarbeiten
+    handleIRSwitchKitchen();
+    handleKreuzschaltungEG();
+    handleKreuzschaltungKG();
+  }
   
   // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
   // WENN AKTIVIERT: Uncomment die folgenden Zeilen und entferne Polling
