@@ -29,13 +29,13 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
     GND (Masse)       2 │●                        ●│ 23  RXD (GPIO3)   - I/O, Prog & Debug  
     3V3 (+3.3V)       3 │●                        ●│ 22  IO0 (GPIO0)   - LAN REFCLK0
     EN (Programming)  4 │●                        ●│ 21  GND (Masse)
-    CFG (GPIO32)      5 │●                        ●│ 20  IO39 (GPIO39) - Input only
-    485_EN (GPIO33)   6 │●                        ●│ 19  IO36 (GPIO36) - Input only
-    ---             7 │●                        ●│ 18  IO14 (GPIO14) - MTDO / Boot Debug Output
-    TXD (GPIO17)      8 │●                        ●│ 17  IO15 (GPIO15) - PWM LED Dimmer
-    GND (Masse)       9 │●                        ●│ 16  IO12 (GPIO12) - NO BOOT if HIGH
-    3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - Input only
-    GND (Masse)      11 │●                        ●│ 14  IO14 (GPIO14) - MTDO
+    CFG (GPIO32)      5 │●                        ●│ 20  IO39 (GPIO39) - MCP23017 IRQ (Input-only)
+    485_EN (GPIO33)   6 │●                        ●│ 19  IO36 (GPIO36) - MPR121 IRQ (Input-only)
+    ---             7 │●                        ●│ 18  IO14 (GPIO14) - LED Dimmer PWM
+    TXD (GPIO17)      8 │●                        ●│ 17  IO15 (GPIO15) - Reserve
+    RXD (GPIO05)      9 │●                        ●│ 16  IO04 (GPIO04) - AC Dimmer PWM
+    3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - 1-Wire DS18B20 (Input-only)
+    GND (Masse)      11 │●                        ●│ 14  IO12 (GPIO12) - ⚠️ BOOT fail wenn HIGH!
     5V (+5V In)      12 │●                        ●│ 13  IO2  (GPIO2)  - NO PROG if HIGH
                         │                          │
                         ├───┐                  ┌───┤
@@ -88,21 +88,21 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 - `GPA4`: Kreuzschaltung KG1 - Taster Tür Schlafzimmer (Input mit Pull-Up)
 - `GPA5`: Kreuzschaltung KG2 - Taster Bad KG (Input mit Pull-Up)
 - `GPA6`: Kreuzschaltung KG3 - Taster Treppe KG-EG (Input mit Pull-Up)
-- `GPA7`: Reserve (früher MPR121 IRQ, jetzt auf GPIO16)
+- `GPA7`: Reserve (früher MPR121 IRQ, jetzt auf GPIO36)
 
 **Port B (GPB0-GPB7) - Reserve:**
 - `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
 
 **MCP23017 Interrupt:**
-- `INTA/INTB`: Verbunden mit **GPIO13** (ESP32) - triggert bei Änderung auf GPA0-7 oder GPB0-7
+- `INTA/INTB`: Verbunden mit **GPIO39** (ESP32) - triggert bei Änderung auf GPA0-7 oder GPB0-7
 
 ⚠️ **WICHTIG - Level Shifter erforderlich für MPR121 Touchboards!**
 Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mit **3.3V Logik**.
-- **Alle 3 MPR121 IRQ-Leitungen werden mit Wired-OR kombiniert** → **GPIO16** (ESP32) über Level Shifter
+- **Alle 3 MPR121 IRQ-Leitungen werden mit Wired-OR kombiniert** → **GPIO36** (ESP32) über Level Shifter
 - **Ein bidirektionaler Level Shifter ist ZWINGEND erforderlich** (z.B. TXB0108, PCA9306) für:
   - **SCL**: 3.3V → 5V (Output WT32 → Input Touchboards)
   - **SDA**: bidirektional 3.3V ↔ 5V
-  - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input GPIO16 ESP32)
+  - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input GPIO36 ESP32)
 - **OHNE Level Shifter**: 5V-Signale beschädigen die 3.3V-Eingänge des ESP32!
 
 **Spezifikationen:**
@@ -153,7 +153,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 #### LED Dimmer GPIO-Belegung
 
 **GPIO-Zuordnung:**
-- `GPIO15`: PWM-Signal (0-255 → 0-100% Helligkeit)
+- `GPIO14`: PWM-Signal (0-255 → 0-100% Helligkeit)
 - `VCC 5V`: Stromversorgung Modul (oder 3.3V je nach Vers.)
 - `GND`: Ground
 - **Eingang IN+**: Zu 12-24V DC Stromversorgung (+)
@@ -236,15 +236,14 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 ║  GPIO01   ║ TX0/UART     ║ ✅ Serial TX (Programming & Debug) - zu PC/USB Adapter                                                ║
 ║  GPIO03   ║ RX0/UART     ║ ✅ Serial RX (Programming & Debug) - von PC/USB Adapter                                               ║
 ║  GPIO04   ║ PWM Out      ║ ✅ AC Dimmer YYAC-3S (220V Kronleuchter) - 0-255 PWM Steuerung                                        ║
-║  GPIO13   ║ IRQ Input    ║ ✅ MCP23017 INTA/INTB - Schalter/Taster Events (INPUT_PULLUP)                                         ║
-║  GPIO15   ║ PWM Out      ║ ✅ LED Dimmer HW-517 MOSFET (12-24V DC LEDs) - 0-255 PWM Steuerung                                    ║
-║  GPIO16   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter)                           ║
+║  GPIO14   ║ PWM Out      ║ ✅ LED Dimmer HW-517 MOSFET (12-24V DC LEDs) - 0-255 PWM Steuerung                                    ║
+║  GPIO15   ║ Reserve      ║ ⚪ RESERVE - OUTPUT möglich                                                                            ║
 ║  GPIO17   ║ Status LED   ║ ✅ OnBoard LED (aktiv HIGH) - System-Status Anzeige                                                    ║
 ║  GPIO32   ║ I²C SCL      ║ ✅ I²C Clock für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                            ║
 ║  GPIO33   ║ I²C SDA      ║ ✅ I²C Data für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                             ║
 ║  GPIO35   ║ 1-Wire In    ║ ✅ DS18B20 Temp-Sensor (Input-only, 4.7kΩ Pull-up zu 3.3V)                                            ║
-║  GPIO36   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
-║  GPIO39   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
+║  GPIO36   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter) (Input-only)               ║
+║  GPIO39   ║ IRQ Input    ║ ✅ MCP23017 INTA/INTB - Schalter/Taster Events (INPUT_PULLUP) (Input-only)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║           ║              ║                      🔴 ETHERNET-GPIO (Hardware-reserviert - NICHT ändern!)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
@@ -262,7 +261,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║  GPIO02   ║ Boot Mode    ║ ⚠️  Darf keinen externen Pull-up beim Programmieren haben - RESERVE                                   ║
 ║  GPIO12   ║ Boot Fail    ║ ⚠️  KRITISCH! Boot fail wenn HIGH beim Start - NIEMALS Pull-up verwenden! - RESERVE                   ║
-║  GPIO14   ║ MTDO/Boot    ║ ⚠️  Boot Debug Output (MTDO) - kann beim Boot Log ausgeben - aktuell RESERVE                         ║
+║  GPIO14   ║ MTDO/PWM     ║ ⚠️  LED Dimmer HW-517 (GPIO14 = MTDO, kann beim Boot Debug-Output ausgeben)                         ║
 ╚═══════════╩══════════════╩════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -281,8 +280,8 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 - **Bi-direktionaler Level Shifter ERFORDERLICH** (z.B. TXB0108, PCA9306):
   - SCL: 3.3V Output (WT32) → 5V Input (Touchboards)
   - SDA: Bidirektional 3.3V ↔ 5V
-  - IRQ: 5V Output (Wired-OR der 3 Touchboards) → 3.3V Input (**GPIO16** ESP32)
-  - MCP23017 INTA/INTB: Direkt zu **GPIO13** ESP32 (3.3V Logik, kein Level Shifter nötig)
+  - IRQ: 5V Output (Wired-OR der 3 Touchboards) → 3.3V Input (**GPIO36** ESP32)
+  - MCP23017 INTA/INTB: Direkt zu **GPIO39** ESP32 (3.3V Logik, kein Level Shifter nötig)
 - **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA)
 - **5V Versorgung** für alle MPR121 Touchboards (über Level Shifter Versorgung oder separate 5V Rail)
 - **4.7kΩ Pullup-Widerstände** am WT32-ETH01 Seite (SDA/SCL zu 3.3V) - auf 3.3V Seite des Level Shifters
@@ -312,18 +311,18 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 - **I²C Logik: 5V Level** (kompatibel mit den Relais-Board 5V Versorgung)
 - **IRQ Signal: 5V Level** (aktiv LOW bei Touch-Erkennung)
 - **Alle 3 Boards werden auf EINER I²C-Adressenleitung montiert** (Daisy-Chain I²C)
-- **Alle 3 IRQ-Ausgänge werden zu einer Wired-OR Leitung kombiniert** → **GPIO16** des ESP32 über Level Shifter
+- **Alle 3 IRQ-Ausgänge werden zu einer Wired-OR Leitung kombiniert** → **GPIO36** des ESP32 über Level Shifter
 - ⚠️ **Level Shifter zwingend erforderlich**: 5V Signal darf nicht direkt auf 3.3V-Eingänge des ESP32 gelegt werden!
 
 **Die 3 IRQ-Leitungen können zusammengefasst werden weil:**
 - Alle IRQ-Ausgänge sind aktiv LOW (Open-Drain)
-- Wired-OR: Wenn EINE der 3 Touchboards einen Touch erkennt, wird GPIO16 auf LOW gezogen
+- Wired-OR: Wenn EINE der 3 Touchboards einen Touch erkennt, wird GPIO36 auf LOW gezogen
 - Der Interrupt-Handler liest dann, welches Board den Interrupt ausgelöst hat, über die I²C-Adresse
 - Resultat: Nur 1 physikalische IRQ-Leitung statt 3 erforderlich
 
 **Interrupt-Architektur:**
-- **GPIO13**: MCP23017 INTA/INTB → Schalter/Taster Events (3.3V Logik)
-- **GPIO16**: MPR121 Wired-OR → Touch Panel Events (5V→3.3V via Level Shifter)
+- **GPIO39**: MCP23017 INTA/INTB → Schalter/Taster Events (3.3V Logik)
+- **GPIO36**: MPR121 Wired-OR → Touch Panel Events (5V→3.3V via Level Shifter)
 
 ## 🎛️ System-Funktionen
 
@@ -338,7 +337,7 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 - **[Wohnzimmerlampe 1](src/main.cpp#L347) & [2](src/main.cpp#L354)** - Wohnzimmerbeleuchtung (R11, R12)
 
 ### 💡 PWM Dimmer (LED & AC)
-- **[LED Dimmer Kellertreppe](src/main.cpp#L348)** - GPIO14, MOSFET-gesteuert, 0-100% Helligkeit
+- **[LED Dimmer HW-517](src/main.cpp#L348)** - GPIO14, MOSFET-gesteuert, 12-24V DC, 0-100% Helligkeit
 - **[AC Dimmer Kronleuchter](src/main.cpp#L349)** - GPIO4, 220V AC-Dimmer, 0-100% Helligkeit (R11)
   - Kurzer Touch: EIN/AUS toggle
   - Langer Touch: Kontinuierliches Dimmen up/down
@@ -365,7 +364,7 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 - **[1x MCP23017](src/main.cpp#L52)** I²C GPIO-Expander für 16 digitale Ein-/Ausgänge
 - **[I²C Bus](src/main.cpp#L47)** auf GPIO32 (SCL) und GPIO33 (SDA)
 - **[AC Dimmer YYAC-3S](src/main.cpp#L1195)** - GPIO4 PWM, 220V AC bis 1000W für Kronleuchter
-- **[LED Dimmer HW-517 V0.0.1](src/main.cpp#L1173)** - GPIO15 PWM, 12-24V DC bis 30A für LED-Stripes
+- **[LED Dimmer HW-517 V0.0.1](src/main.cpp#L1173)** - GPIO14 PWM, 12-24V DC bis 30A für LED-Stripes
 
 ### 🔧 Technische Features
 - **[Ethernet-Kommunikation](src/main.cpp#L132)** für stabile Netzwerkverbindung

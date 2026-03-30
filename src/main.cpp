@@ -9,10 +9,10 @@
 // │   GPIO     │   Funktion    │               Beschreibung                    │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
 // │ GPIO04  🔸 │ PWM           │ AC Dimmer YYAC-3S (220V Kronleuchter)   │
+// │ GPIO14  🔸 │ PWM           │ LED Dimmer HW-517 V0.0.1 (MOSFET)          │
 // │ GPIO35  📥 │ 1-Wire (Input) │ DS18B20 Temp-Sensor + 4.7kΩ Pull-up zu 3.3V │
-// │ GPIO13  🔸 │ IRQ Input     │ MCP23017 INTA/INTB (Schalter/Taster)         │
-// │ GPIO15  🔸 │ PWM           │ LED Dimmer HW-517 V0.0.1 (MOSFET)          │
-// │ GPIO16  🔸 │ IRQ Input     │ MPR121 Wired-OR IRQ (3x Touch via L.Shift)   │
+// │ GPIO36  📥 │ IRQ Input     │ MPR121 Wired-OR IRQ (3x Touch via L.Shift)   │
+// │ GPIO39  📥 │ IRQ Input     │ MCP23017 INTA/INTB (Schalter/Taster)         │
 // │ GPIO17  💡 │ Status LED    │ OnBoard LED (aktiv HIGH)                      │
 // │ GPIO32  📡 │ I²C SCL       │ Clock für alle I²C Geräte + 4.7kΩ PU         │
 // │ GPIO33  📡 │ I²C SDA       │ Daten für alle I²C Geräte + 4.7kΩ PU         │
@@ -46,7 +46,7 @@
 //   GPA0-GPA6: IR-Switch Küche, Kreuzschaltungen
 //   GPA7: Reserve (früher MPR121 IRQ, jetzt auf GPIO16)
 //   GPB0-GPB7: Reserve Eingänge (8 weitere Pins)
-//   INTA/INTB: Interrupt verbunden mit GPIO13
+//   INTA/INTB: Interrupt verbunden mit GPIO39
 //
 // PCA9535 Relay Boards:  0x22, 0x23, 0x24 (3x 8 Relais Ausgänge)
 //   Board A (0x22): R00-R07
@@ -106,11 +106,11 @@ String getNetworkStatus();
 #define SCL_PIN 32
 
 // ---------- Interrupt Pins ----------
-#define MCP23017_IRQ_PIN 13   // GPIO13 für MCP23017 INTA/INTB (Schalter/Taster)
-#define MPR121_IRQ_PIN 16     // GPIO16 für MPR121 Wired-OR IRQ (3x Touch via Level Shifter)
+#define MCP23017_IRQ_PIN 39   // GPIO39 für MCP23017 INTA/INTB (Schalter/Taster) - Input-only
+#define MPR121_IRQ_PIN 36     // GPIO36 für MPR121 Wired-OR IRQ (3x Touch via Level Shifter) - Input-only
 
 // ---------- PWM Setup für LED & AC Dimmer ----------
-#define LED_DIMMER_PIN 15        // GPIO15 für MOSFET LED Dimmer HW-517 V0.0.1
+#define LED_DIMMER_PIN 14        // GPIO14 für MOSFET LED Dimmer HW-517 V0.0.1
 #define AC_DIMMER_PIN 4          // GPIO4 für AC Dimmer YYAC-3S (220V Kronleuchter)
 #define PWM_CHANNEL_LED 0        // LEDC Kanal 0 für LED Dimmer
 #define PWM_CHANNEL_AC 1         // LEDC Kanal 1 für AC Dimmer
