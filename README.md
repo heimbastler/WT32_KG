@@ -46,60 +46,13 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
                         └───┘                  └───┘
 ```
 
-**Funktionsbeschreibung:**
+**📍 24-Pin Header Belegung (physikalische Pins):**
 
-| Pin | GPIO   | Typ                | Beschreibung                                    |
-|-----|--------|--------------------|-------------------------------------------------|
-| 1   | EN     | Input              | Enable/Reset (Programming)                      |
-| 2   | GND    | Power              | Ground                                          |
-| 3   | 3V3    | Power              | 3.3V Versorgungsspannung                        |
-| 4   | EN     | Input              | Enable/Reset (Programming)                      |
-| 5   | GPIO32 | I/O (**SCL**)      | **I²C Clock** (Pull-up extern 4.7kΩ)            |
-| 6   | GPIO33 | I/O (**SDA**)      | **I²C Data** (Pull-up extern 4.7kΩ)             |
-| 17  | GPIO35 | Input-only + **1-Wire** | **DS18B20 Temp-Sensor + 4.7kΩ Pull-up zu 3.3V**|
-| 8   | GPIO17 | I/O                | Status LED OnBoard (aktiv HIGH)                 |
-| 9   | GND    | Power              | Ground                                          |
-| 10  | 3V3    | Power              | 3.3V Versorgungsspannung                        |
-| 11  | GND    | Power              | Ground                                          |
-| 12  | 5V     | Power              | 5V Eingang (VIN)                                |
-| 13  | GPIO2  | I/O                | Boot Mode Control (LOW beim Programmieren)      |
-| 14  | GPIO4  | I/O + **PWM**      | **AC Dimmer YYAC-3S (220V Kronleuchter)**       |
-| 15  | GPIO35 | Input only         | ADC, kein Pull-up                               |
-| 16  | GPIO12 | I/O ⚠️             | ⚠️ **KEIN Pull-up! Boot fail wenn HIGH!**      |
-| 17  | GPIO15 | I/O + **PWM**      | **LED Dimmer HW-517 V0.0.1 (MOSFET)**           |
-| 18  | GPIO14 | I/O                | MTDO / Boot Debug Output (optional verfügbar) |
-| 19  | GPIO36 | Input only         | ADC, kein Pull-up                               |
-| 20  | GPIO39 | Input only         | ADC, kein Pull-up                               |
-| 21  | GND    | Power              | Ground                                          |
-| 22  | GPIO0  | I/O                | LAN8720 REFCLK0 (Boot Mode beim Flash: LOW)     |
-| 23  | GPIO3  | I/O                | UART RXD (Programming & Debug)                  |
-| 24  | GPIO1  | I/O                | UART TXD (Programming & Debug)                  |
+Siehe ASCII-Diagramm oben für die physikalische Pin-Zuordnung.  
+Für die komplette GPIO-Funktionszuordnung siehe die GPIO-Übersichtstabelle weiter unten.
 
 > **⚠️ HINWEIS:** Laut Diagramm sind **IO5 und IO35** im offiziellen Schaltplan **vertauscht**!  
-> Oben ist die **korrigierte Belegung** aufgeführt.
-
-**🔌 Zusätzliche GPIO-Zuordnungen (nicht auf 24-Pin-Header):**
-
-| GPIO   | Funktion          | Beschreibung                                     |
-|--------|-------------------|--------------------------------------------------|
-| GPIO13 | **IRQ Input**     | **MCP23017 INTA/INTB** (Schalter/Taster Events) |
-| GPIO16 | **IRQ Input**     | **MPR121 Wired-OR IRQ** (3x Touch Panels)       |
-
-**Wichtige Boot-Pin-Einschränkungen:**
-- **GPIO0**: Muss LOW sein beim Flash-Vorgang (Programmierung)
-- **GPIO2**: Darf kein Pull-up beim Programmieren haben  
-- **GPIO12**: ⚠️ **KRITISCH! Boot fail wenn HIGH beim Start - NIEMALS Pull-up verwenden!**
-- **GPIO14**: MTDO - Boot Debug Output
-
-**Warum GPIO35 statt GPIO12 für 1-Wire DS18B20?**
-- DS18B20 benötigt **4.7kΩ Pull-up zu 3.3V** für 1-Wire Kommunikation
-- **GPIO12** ist ein Boot-Mode-Pin: HIGH beim Boot = Boot failure!
-- **GPIO35** ist ein Input-only Pin (ideal für 1-Wire Read-only) und hat keine Boot-Einschränkungen
-- Alternativen: GPIO13, GPIO16, GPIO4, GPIO15 (alle sicher für Pull-up, aber Output-fähig)
-
-**Interrupt-GPIO-Zuordnungen:**
-- **GPIO13**: MCP23017 INTA/INTB → Triggert bei Schalter/Taster-Ereignissen (GPA0-7, GPB0-7)
-- **GPIO16**: MPR121 Wired-OR → Triggert bei Touch auf einem der 3 Panels (kombinierter IRQ über Level Shifter)
+> Die korrekte Zuordnung ist in der GPIO-Übersichtstabelle unten aufgeführt.
 
 ### 🔌 Relais Boards: XL9535-K1V5
 8 Kanal Erweiterungsrelais Modul 5V Netzteil I²C Kommunikation Optokoppler Isolation Board
@@ -227,92 +180,9 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 
 ---
 
-**Komplettes Anschlussdiagramm WT32-ETH01 System:**
+### 🔒 LAN8720 PHY Ethernet GPIO Konfiguration
 
 ```
-╔════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-║                               WT32-ETH01 (ESP32) Smart Home Controller mit Level Shifter                                       ║
-║                                                    Version 1.4                                                                 ║
-╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-
-                                          ┌─────────────────────────────────────┐
-                                          │         WT32-ETH01 (ESP32)          │
-                                          │                                     │
-                                          │  GPIO32/SCL ──┬─ [4.7kΩ] ── 3.3V    │
-                                          │  GPIO33/SDA ──┼─ [4.7kΩ] ── 3.3V    │
-                                          │ GPIO35  ──────┼─ 1-Wire Temp (Input) │
-                                          │  GPIO13 ──────┼─ MCP23017 IRQ       │◄─────┐
-                                          │  GPIO16 ──────┼─ MPR121 IRQ         │◄─────┼──────┐
-                                          │  GPIO15 ──────┼─ LED Dimmer HW-517 (PWM)  │
-                                          │  GPIO17 ──────┼─ Status LED         │      │      │
-                                          │  GND ─────────┼─ Common Ground      │      │      │
-                                          │  3.3V ────────┼─ Logic Power (3.3V) │      │      │
-                                          └───────┬───────┴──────────────────────┘      │      │
-                                                  │                                     │      │
-                                           ┌──────┴──────────┐                         │      │
-                                           │  I²C: SCL 3.3V  │                         │      │
-                                           │  I²C: SDA 3.3V  │                         │      │
-                                           └──────────┬──────┘                         │      │
-                                                      │                                │      │
-                        ┌─────────────────────────────┼────────────────────────────┐   │      │
-                        │                             │                            │   │      │
-                        │                             │            ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓│
-                        │                             │            ┃  LEVEL SHIFTER (TXB0108 oder ähnl.)    ┃│
-                        │                             │            ┃  ┌────────────────────────────────┐    ┃│
-                        │                             │            ┃  │  3.3V Side  ↔  5V Side         │    ┃│
-                        │                             │            ┃  ├────────────────────────────────┤    ┃│
-                        │                             │            ┃  │  SCL_out ──┐  ┌─── SCL_in      │    ┃│
-                        │                             │            ┃  │  SDA  ◄────┼──┼─►  SDA         │    ┃│
-                        │                             │            ┃  │  IRQ_in ◄──┼──┼─── IRQ_out     │    ┃│
-                        │                             │            ┃  │     (5→3.3V)│  │    (Wired-OR)  │    ┃│
-                        │                             │            ┃  │  GND ───────┴──┴─── GND         │    ┃│
-                        │                             │            ┃  └────────────────────────────────┘    ┃│
-                        │                             │            ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛│
-                        │                             │                             │                       │
-                        │                             │                ┌────────────────────────────┐       │
-                        │                             │                │            │               │       │
-                        │                             │                │        5V I²C Bus          │       │
-                        │                             │                │            │               │       │
-                        │                             │                │            │               │       │
-                                                      │                │            │               │       │
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓                   │    ┏━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━┓│
-┃        MCP23017 INPUT           ┃                   │    │ MPR121 TOUCH   ┃  │ MPR121 TOUCH  ┃  ┃ MPR121 TOUCH  ┃│
-┃    (0x20) - 3.3V Logic          ┃                   │    │ Panel 1 (0x5A) ┃  │ Panel 2(0x5C) ┃  ┃ Panel 3(0x5D) ┃│
-┃                                 ┃                   │    │ 5V Logic       ┃  │ 5V Logic      ┃  ┃ 5V Logic      ┃│
-┃  Port A (GPA0-GPA7):            ┃                   │    │ SCL/SDA/GND    ┃  │ SCL/SDA/GND   ┃  ┃ SCL/SDA/GND   ┃│
-┃  ├─ GPA0: IR-Switch Links       ┃                   │    │ IRQ (Pin X)─►──────►IRQ (Pin X)─►─────►IRQ (Pin X)─►────┘
-┃  ├─ GPA1: IR-Switch Rechts      ┃                   │    │ 12x Touch Pads ┃  │ 12x Pads      ┃  ┃ 12x Pads      ┃
-┃  ├─ GPA2: Kreuz EG1             ┃                   │    │                ┃  │               ┃  ┃               ┃
-┃  ├─ GPA3: Kreuz EG2             ┃                   │    │ Tür Garten EG  ┃  │ Säule Garten  ┃  ┃ Säule Straße  ┃
-┃  ├─ GPA4: Kreuz KG1             ┃                   │    │                ┃  │ EG            ┃  ┃ EG            ┃
-┃  ├─ GPA5: Kreuz KG2             ┃                   │    └────────────────┘  └───────────────┘  └───────────────┘
-┃  ├─ GPA6: Kreuz KG3             ┃                   │
-┃  └─ GPA7: Reserve               ┃                   │
-┃                                 ┃                   │
-┃  Port B (GPB0-GPB7) - Reserve:  ┃                   │
-┃  ├─ GPB0-GPB7: N/C              ┃                   │
-┃                                 ┃                   │
-┃  INTA/INTB ─────────────────────┼───────────────────┘
-┃  (IRQ bei Änderung GPA/GPB)     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-      │                                               │
-      ├─ Kabel EG11                                   │
-      ├─ Kabel EG10                                   │
-      ├─ Kabel EG1                                    │
-      ├─ Kabel KG1                                    │
-      └─ weitere Schalter                             │
-
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃      PCA9535 RELAIS (Board A)   ┃  ┃   PCA9535 RELAIS (Board B)      ┃  ┃   PCA9535 RELAIS (Board C)      ┃
-┃    (0x22) - 3.3V I²C Logic      ┃  ┃ (0x23) - 3.3V I²C Logic         ┃  ┃ (0x24) - 3.3V I²C Logic         ┃
-┃                                 ┃  ┃                                 ┃  ┃                                 ┃
-┃  Ausgänge: R00-R07              ┃  ┃  Ausgänge: R08-R15              ┃  ┃  Ausgänge: R16-R23              ┃
-┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃  ┃  ├─ P0-P7: 8x Relais Ausgänge   ┃
-┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 5V Extern (100mA)           ┃  ┃  └─ 5V Extern (100mA)           ┃
-┃                                 ┃  ┃                                 ┃  ┃                                 ┃
-┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃  ┃  → 230V Relais Verbraucher      ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
 ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
 ║                     🔒 LAN8720 PHY ETHERNET - RESERVIERTE GPIO PINS (GEPRÜFT & FUNKTIONIEREND)                                  ║
 ║                                      ⚠️  DIESE KONFIGURATION NIEMALS ÄNDERN! ⚠️                                                  ║
@@ -351,61 +221,63 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 └─────────────┴─────────┴──────────────────────────────────────┘
 ```
 
-**WT32-ETH01 Pinbelegung:**
+### 📌 Komplette GPIO-Übersicht WT32-ETH01
+
+**Alle GPIO-Zuordnungen (jede GPIO nur 1x aufgeführt - keine Redundanzen!):**
+
 ```
-┌─────────┬──────────────┬────────────────────────────────────────────────────────────┐
-│   Pin   │   Funktion   │               Beschreibung                                 │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO04  │ PWM          │ AC Dimmer YYAC-3S 220V (GPIO4)                             │
-│ GPIO13  │ IRQ Input    │ MCP23017 INTA/INTB Interrupt (Schalter/Taster)            │
-│ GPIO14  │ MTDO         │ Boot Debug Output (optional verfügbar)                     │
-│ GPIO15  │ PWM          │ LED Dimmer HW-517 V0.0.1 MOSFET (GPIO15)                  │
-│ GPIO16  │ IRQ Input    │ MPR121 Wired-OR Interrupt (3x Touch Panels via Level Shift)│
-│ GPIO17  │ Status LED   │ OnBoard LED (aktiv HIGH)                                   │
-│ GPIO35  │ 1-Wire       │ DS18B20 Temperatursensor (Input-only, 4.7kΩ Pull-up zu 3V) │
-│ GPIO32  │ I²C SCL      │ Clock für alle I²C Geräte + 4.7kΩ PU                       │
-│ GPIO33  │ I²C SDA      │ Daten für alle I²C Geräte + 4.7kΩ PU                       │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO12  │ ⚠️ RESERVE   │ ⚠️ KEIN Pull-up erlaubt! Boot fail wenn HIGH beim Start!  │                     │
-│ GPIO23  │ ETH_MDC      │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO25  │ ETH_TX_EN    │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO26  │ ETH_RX_ER    │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO27  │ ETH_CRS_DV   │ LAN8720 PHY (reserviert - nicht frei!)                     │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO01  │ TX0/UART0    │ Serial Debug (Flash/Upload - zum PC)                       │
-│ GPIO03  │ RX0/UART0    │ Serial Debug (Flash/Upload - vom PC)                       │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO35  │ Input Only   │ ADC - kein Pull-up möglich, nur Eingang                    │
-│ GPIO36  │ Input Only   │ ADC - kein Pull-up möglich, nur Eingang                    │
-│ GPIO39  │ Input Only   │ ADC - kein Pull-up möglich, nur Eingang                    │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GND     │ Masse        │ Gemeinsame Masse für alle Geräte                           │
-│ 3.3V    │ Logic        │ Pullup-Versorgung, kein Board-Power                        │
-│ 5V      │ Power Input  │ Hauptstromversorgung (VIN)                                 │
-│ ETH     │ Netzwerk     │ LAN8720 PHY → RJ45 Ethernet (8 Pins oben)                  │
-└─────────┴──────────────┴────────────────────────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                            ✅ AKTIVE GPIO-ZUORDNUNGEN (GEPRÜFT & FUNKTIONIEREND - 30.03.2026)                                    ║
+╠═══════════╦══════════════╦════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║   GPIO    ║   Funktion   ║                              Beschreibung & Status                                                    ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║           ║              ║                        🟢 USER-GPIO (verfügbar/verwendet)                                             ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║  GPIO01   ║ TX0/UART     ║ ✅ Serial TX (Programming & Debug) - zu PC/USB Adapter                                                ║
+║  GPIO03   ║ RX0/UART     ║ ✅ Serial RX (Programming & Debug) - von PC/USB Adapter                                               ║
+║  GPIO04   ║ PWM Out      ║ ✅ AC Dimmer YYAC-3S (220V Kronleuchter) - 0-255 PWM Steuerung                                        ║
+║  GPIO13   ║ IRQ Input    ║ ✅ MCP23017 INTA/INTB - Schalter/Taster Events (INPUT_PULLUP)                                         ║
+║  GPIO15   ║ PWM Out      ║ ✅ LED Dimmer HW-517 MOSFET (12-24V DC LEDs) - 0-255 PWM Steuerung                                    ║
+║  GPIO16   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter)                           ║
+║  GPIO17   ║ Status LED   ║ ✅ OnBoard LED (aktiv HIGH) - System-Status Anzeige                                                    ║
+║  GPIO32   ║ I²C SCL      ║ ✅ I²C Clock für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                            ║
+║  GPIO33   ║ I²C SDA      ║ ✅ I²C Data für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                             ║
+║  GPIO35   ║ 1-Wire In    ║ ✅ DS18B20 Temp-Sensor (Input-only, 4.7kΩ Pull-up zu 3.3V)                                            ║
+║  GPIO36   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
+║  GPIO39   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║           ║              ║                      🔴 ETHERNET-GPIO (Hardware-reserviert - NICHT ändern!)                           ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║  GPIO00   ║ ETH_REFCLK0  ║ 🔒 LAN8720 PHY - 50MHz Clock Input (Boot Mode beim Flash: LOW!)                                       ║
+║  GPIO18   ║ ETH_MDIO     ║ 🔒 LAN8720 PHY - Management Data I/O                                                                   ║
+║  GPIO19   ║ ETH_TXD0     ║ 🔒 LAN8720 PHY - TX Data 0                                                                             ║
+║  GPIO21   ║ ETH_CLK_OUT  ║ 🔒 LAN8720 PHY - Clock Output                                                                          ║
+║  GPIO22   ║ ETH_RXD0     ║ 🔒 LAN8720 PHY - RX Data 0                                                                             ║
+║  GPIO23   ║ ETH_MDC      ║ 🔒 LAN8720 PHY - Management Clock                                                                      ║
+║  GPIO25   ║ ETH_TX_EN    ║ 🔒 LAN8720 PHY - TX Enable                                                                             ║
+║  GPIO26   ║ ETH_RX_ER    ║ 🔒 LAN8720 PHY - RX Error                                                                              ║
+║  GPIO27   ║ ETH_CRS_DV   ║ 🔒 LAN8720 PHY - Carrier Sense                                                                         ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║           ║              ║                      ⚠️  BOOT-KRITISCHE GPIO (Vorsicht bei Verwendung!)                               ║
+╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║  GPIO02   ║ Boot Mode    ║ ⚠️  Darf keinen externen Pull-up beim Programmieren haben - RESERVE                                   ║
+║  GPIO12   ║ Boot Fail    ║ ⚠️  KRITISCH! Boot fail wenn HIGH beim Start - NIEMALS Pull-up verwenden! - RESERVE                   ║
+║  GPIO14   ║ MTDO/Boot    ║ ⚠️  Boot Debug Output (MTDO) - kann beim Boot Log ausgeben - aktuell RESERVE                         ║
+╚═══════════╩══════════════╩════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
-**⚠️ KRITISCHE Boot-Pin-Einschränkungen:**
-```
-┌──────────┬────────────────────────────────────────────────────────────────────┐
-│   GPIO   │                        Boot-Verhalten                              │
-├──────────┼────────────────────────────────────────────────────────────────────┤
-│ GPIO0    │ MUSS LOW sein beim Flash! (Boot Mode Selection)                   │
-│ GPIO2    │ Darf keinen externen Pull-up beim Programmieren haben              │
-│ GPIO12   │ ⚠️ BOOT FAIL wenn HIGH beim Start! KEIN Pull-up erlaubt!          │
-│ GPIO14   │ Gibt Boot-Debug-Log aus (MTDO), kann stören                        │
-└──────────┴────────────────────────────────────────────────────────────────────┘
-```
+**Legende:**
+- ✅ = Aktiv verwendet und getestet
+- 🔒 = Hardware-reserviert (LAN8720 PHY) - NIEMALS für User-Code verwenden!
+- ⚠️ = Boot-kritisch - nur mit Vorsicht verwenden
+- ⚪ = Reserve/Nicht verwendet
 
-**✅ Sichere GPIOs für Pull-up-Anwendungen (z.B. 1-Wire DS18B20):**
-- **GPIO35** ✓ (aktuell verwendet für 1-Wire - Input-only)
-- **GPIO13** ✓ (aktuell verwendet für MCP23017 IRQ)
-- **GPIO16** ✓ (aktuell verwendet für MPR121 Wired-OR IRQ)
-- **GPIO4** ✓ (aktuell PWM, aber sicher bei Bedarf)
-- **GPIO14** ✓ (aktuell PWM, aber sicher bei Bedarf)
+**🔴 WICHTIG:** 
+- Ethernet-Konfiguration: `ETH.begin()` ohne Parameter (Board-Defaults)
+- Getestet: 30.03.2026 - Web-UI funktioniert
+- **KEINE ÄNDERUNGEN an Ethernet GPIOs mehr vornehmen!**
 
-**Wichtige Hinweise:**
+**Wichtige Verbindungshinweise:**
 - **Bi-direktionaler Level Shifter ERFORDERLICH** (z.B. TXB0108, PCA9306):
   - SCL: 3.3V Output (WT32) → 5V Input (Touchboards)
   - SDA: Bidirektional 3.3V ↔ 5V
@@ -420,12 +292,11 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 - **TouchPanels** benötigen 5V Versorgung + I²C Anschluss
 
 **UART Adapter Verbindung (zum Debuggen/Flashen):**
-- **GPIO01 (TX0)** → CP2102/TTL Adapter RXD Pin
-- **GPIO03 (RX0)** → CP2102/TTL Adapter TXD Pin
-- **GND** → CP2102/TTL Adapter GND Pin
-- **3.3V** → CP2102/TTL Adapter 3.3V Pin (optional, für Stromversorgung)
-- ⚠️ **GPIO01/GPIO03 sind Boot-Strapping-Pins** - Vorsicht beim Anschluss!
-- **Alternative:** UART2 (GPIO16/GPIO17) nicht nutzbar - GPIO17 ist Status LED
+- **TX (GPIO01)** → CP2102/TTL Adapter **RXD** Pin
+- **RX (GPIO03)** → CP2102/TTL Adapter **TXD** Pin
+- **GND** → CP2102/TTL Adapter **GND** Pin
+- **3.3V** → CP2102/TTL Adapter **3.3V** Pin (optional)
+- ⚠️ GPIO01/GPIO03 sind Boot-Strapping-Pins - Vorsicht beim Anschluss während Boot!
 
 **Relais-Nummerierung:**
 - Board A (0x22): R00-R07 (Pin 0-7)
