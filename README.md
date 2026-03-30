@@ -31,11 +31,11 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
     EN (Programming)  4 │●                        ●│ 21  GND (Masse)
     CFG (GPIO32)      5 │●                        ●│ 20  IO39 (GPIO39) - Input only
     485_EN (GPIO33)   6 │●                        ●│ 19  IO36 (GPIO36) - Input only
-    RXD (GPIO5)       7 │●                        ●│ 18  IO15 (GPIO15) - MTDO / Startup Log
-    TXD (GPIO17)      8 │●                        ●│ 17  IO14 (GPIO14) - PWM at Boot
+    ---             7 │●                        ●│ 18  IO14 (GPIO14) - MTDO / Boot Debug Output
+    TXD (GPIO17)      8 │●                        ●│ 17  IO15 (GPIO15) - PWM LED Dimmer
     GND (Masse)       9 │●                        ●│ 16  IO12 (GPIO12) - NO BOOT if HIGH
     3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - Input only
-    GND (Masse)      11 │●                        ●│ 14  IO4  (GPIO4)  - I/O
+    GND (Masse)      11 │●                        ●│ 14  IO14 (GPIO14) - MTDO
     5V (+5V In)      12 │●                        ●│ 13  IO2  (GPIO2)  - NO PROG if HIGH
                         │                          │
                         ├───┐                  ┌───┤
@@ -56,18 +56,18 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 | 4   | EN     | Input              | Enable/Reset (Programming)                      |
 | 5   | GPIO32 | I/O (**SCL**)      | **I²C Clock** (Pull-up extern 4.7kΩ)            |
 | 6   | GPIO33 | I/O (**SDA**)      | **I²C Data** (Pull-up extern 4.7kΩ)             |
-| 7   | GPIO5  | I/O + **1-Wire**   | **DS18B20 Temp-Sensor + 4.7kΩ Pull-up (sicher)**|
+| 17  | GPIO35 | Input-only + **1-Wire** | **DS18B20 Temp-Sensor + 4.7kΩ Pull-up zu 3.3V**|
 | 8   | GPIO17 | I/O                | Status LED OnBoard (aktiv HIGH)                 |
 | 9   | GND    | Power              | Ground                                          |
 | 10  | 3V3    | Power              | 3.3V Versorgungsspannung                        |
 | 11  | GND    | Power              | Ground                                          |
 | 12  | 5V     | Power              | 5V Eingang (VIN)                                |
 | 13  | GPIO2  | I/O                | Boot Mode Control (LOW beim Programmieren)      |
-| 14  | GPIO4  | I/O + **PWM**      | **AC Dimmer Kronleuchter 220V**                 |
+| 14  | GPIO4  | I/O + **PWM**      | **AC Dimmer YYAC-3S (220V Kronleuchter)**       |
 | 15  | GPIO35 | Input only         | ADC, kein Pull-up                               |
 | 16  | GPIO12 | I/O ⚠️             | ⚠️ **KEIN Pull-up! Boot fail wenn HIGH!**      |
-| 17  | GPIO14 | I/O + **PWM**      | **LED Dimmer Kellertreppe (MOSFET)**            |
-| 18  | GPIO15 | I/O                | MTDO / Startup Debug Log Output                 |
+| 17  | GPIO15 | I/O + **PWM**      | **LED Dimmer HW-517 V0.0.1 (MOSFET)**           |
+| 18  | GPIO14 | I/O                | MTDO / Boot Debug Output (optional verfügbar) |
 | 19  | GPIO36 | Input only         | ADC, kein Pull-up                               |
 | 20  | GPIO39 | Input only         | ADC, kein Pull-up                               |
 | 21  | GND    | Power              | Ground                                          |
@@ -89,13 +89,13 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 - **GPIO0**: Muss LOW sein beim Flash-Vorgang (Programmierung)
 - **GPIO2**: Darf kein Pull-up beim Programmieren haben  
 - **GPIO12**: ⚠️ **KRITISCH! Boot fail wenn HIGH beim Start - NIEMALS Pull-up verwenden!**
-- **GPIO15**: Gibt beim Startup Debug-Informationen aus
+- **GPIO14**: MTDO - Boot Debug Output
 
-**Warum GPIO5 statt GPIO12 für 1-Wire DS18B20?**
+**Warum GPIO35 statt GPIO12 für 1-Wire DS18B20?**
 - DS18B20 benötigt **4.7kΩ Pull-up zu 3.3V** für 1-Wire Kommunikation
 - **GPIO12** ist ein Boot-Mode-Pin: HIGH beim Boot = Boot failure!
-- **GPIO5** ist sicher und hat keine Boot-Einschränkungen
-- Alternativen: GPIO13, GPIO16, GPIO4, GPIO14 (alle sicher für Pull-up)
+- **GPIO35** ist ein Input-only Pin (ideal für 1-Wire Read-only) und hat keine Boot-Einschränkungen
+- Alternativen: GPIO13, GPIO16, GPIO4, GPIO15 (alle sicher für Pull-up, aber Output-fähig)
 
 **Interrupt-GPIO-Zuordnungen:**
 - **GPIO13**: MCP23017 INTA/INTB → Triggert bei Schalter/Taster-Ereignissen (GPA0-7, GPB0-7)
@@ -159,6 +159,74 @@ Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mi
 - Interner Pull-Up für Input-Pins verfügbar
 - Interrupt-Fähig für Edge-Detection
 
+---
+
+### 🌡️ AC Dimmer: YYAC-3S (1x 220V PWM AC-Dimmer)
+PWM-Dimmer für 220V AC-Lasten (Kronleuchter, Halogen, LED-Trafos mit Phasenanschnitt)
+
+<img src="pictures/AC Dimmer YYAC-3S.jpg" alt="YYAC-3S AC Dimmer Modul" width="30%">
+
+#### AC Dimmer GPIO-Belegung
+
+**GPIO-Zuordnung:**
+- `GPIO4`: PWM-Signal (0-255 → 0-100% Helligkeit)
+- `VCC 5V`: Stromversorgung Modul
+- `GND`: Ground
+- **AC-Eingang**: 220V AC 50Hz (muss extern verdrahtet werden!)
+- **AC-Ausgang**: Zur Last (Kronleuchter, etc.)
+
+**Betriebsarten:**
+- **PWM-Steuerung**: `setACDimmerBrightness(0-255)` in [src/main.cpp](src/main.cpp#L1195)
+- **Relative Änderung**: ±% Helligkeit über Web-Interface
+- **Min/Max Grenzen**: Keine extremen PWM-Werte wenn Strom zurückgeregelt wird
+
+**Wichtige Hinweise:**
+- ⚠️ **GEFAHR 220V!** Nur von geschultem Personal installieren
+- 🔌 Netzteil-Versorgung separat (nicht vom WT32!)
+- 📊 PWM-Frequenz: 5kHz (Modul-spezifisch)
+
+**Spezifikationen:**
+- AC 50Hz 220V ~ 1000W max.
+- PWM Phasenanschnitt-Steuerung
+- 3.3V PWM-Signal (ESP32 kompatibel)
+
+---
+
+### 💡 LED Dimmer: HW-517 V0.0.1 (1x MOSFET PWM-Dimmer)
+MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC-Lasten
+
+<img src="pictures/HW-517 V0.0.1.jpg" alt="HW-517 V0.0.1 LED Dimmer Modul" width="30%">
+
+#### LED Dimmer GPIO-Belegung
+
+**GPIO-Zuordnung:**
+- `GPIO15`: PWM-Signal (0-255 → 0-100% Helligkeit)
+- `VCC 5V`: Stromversorgung Modul (oder 3.3V je nach Vers.)
+- `GND`: Ground
+- **Eingang IN+**: Zu 12-24V DC Stromversorgung (+)
+- **Eingang IN-**: Zu 12-24V DC Stromversorgung (-/GND)
+- **Ausgang OUT+**: Zur LED-Last (+)
+- **Ausgang OUT-**: Zur LED-Last (-)
+
+**Betriebsarten:**
+- **PWM-Steuerung**: `setLEDDimmerBrightness(0-255)` in [src/main.cpp](src/main.cpp#L1173)
+- **Relative Änderung**: ±% Helligkeit über Web-Interface
+- **Sanfte Übergänge**: Rampen-Steuerung für angenehmes Dimmen
+
+**Wichtige Hinweise:**
+- 🔌 Separate 12/24V DC Stromversorgung erforderlich
+- ⚠️ MOSFET wird warm! Ggf. Kühlkörper montieren bei >5A Last
+- 📊 PWM-Frequenz: 5kHz (MOSFETs mögen höhere Frequenzen)
+- Reverse-Polarity-Protection teilweise eingebaut (Datenblatt prüfen!)
+
+**Spezifikationen:**
+- DC 12-24V max. 10-30A (je nach Modul-Version)
+- PWM-Dimming 0-100%
+- MOSFET-Ausgang (IRF740 o.ä.)
+- 3.3V PWM-Signal (ESP32 kompatibel)
+
+---
+
 **Komplettes Anschlussdiagramm WT32-ETH01 System:**
 
 ```
@@ -172,10 +240,10 @@ Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mi
                                           │                                     │
                                           │  GPIO32/SCL ──┬─ [4.7kΩ] ── 3.3V    │
                                           │  GPIO33/SDA ──┼─ [4.7kΩ] ── 3.3V    │
-                                          │  GPIO5  ──────┼─ 1-Wire Temp        │
+                                          │ GPIO35  ──────┼─ 1-Wire Temp (Input) │
                                           │  GPIO13 ──────┼─ MCP23017 IRQ       │◄─────┐
                                           │  GPIO16 ──────┼─ MPR121 IRQ         │◄─────┼──────┐
-                                          │  GPIO14 ──────┼─ LED Dimmer PWM     │      │      │
+                                          │  GPIO15 ──────┼─ LED Dimmer HW-517 (PWM)  │
                                           │  GPIO17 ──────┼─ Status LED         │      │      │
                                           │  GND ─────────┼─ Common Ground      │      │      │
                                           │  3.3V ────────┼─ Logic Power (3.3V) │      │      │
@@ -277,22 +345,17 @@ Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mi
 ┌─────────┬──────────────┬────────────────────────────────────────────────────────────┐
 │   Pin   │   Funktion   │               Beschreibung                                 │
 ├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO04  │ PWM          │ AC Dimmer Kronleuchter 220V (GPIO4)                        │
-│ GPIO05  │ 1-Wire       │ DS18B20 Temperatursensor + 4.7kΩ Pull-up (SICHER!)        │
+│ GPIO04  │ PWM          │ AC Dimmer YYAC-3S 220V (GPIO4)                             │
 │ GPIO13  │ IRQ Input    │ MCP23017 INTA/INTB Interrupt (Schalter/Taster)            │
-│ GPIO14  │ PWM          │ LED Dimmer Kellertreppe (MOSFET)                           │
+│ GPIO14  │ MTDO         │ Boot Debug Output (optional verfügbar)                     │
+│ GPIO15  │ PWM          │ LED Dimmer HW-517 V0.0.1 MOSFET (GPIO15)                  │
 │ GPIO16  │ IRQ Input    │ MPR121 Wired-OR Interrupt (3x Touch Panels via Level Shift)│
 │ GPIO17  │ Status LED   │ OnBoard LED (aktiv HIGH)                                   │
+│ GPIO35  │ 1-Wire       │ DS18B20 Temperatursensor (Input-only, 4.7kΩ Pull-up zu 3V) │
 │ GPIO32  │ I²C SCL      │ Clock für alle I²C Geräte + 4.7kΩ PU                       │
 │ GPIO33  │ I²C SDA      │ Daten für alle I²C Geräte + 4.7kΩ PU                       │
 ├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO12  │ ⚠️ RESERVE   │ ⚠️ KEIN Pull-up erlaubt! Boot fail wenn HIGH beim Start!  │
-│ GPIO15  │ Reserve      │ MTDO - Boot Debug Output (optional verfügbar)              │
-├─────────┼──────────────┼────────────────────────────────────────────────────────────┤
-│ GPIO18  │ ETH_MDIO     │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO19  │ ETH_TXD0     │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO21  │ ETH_CLK_OUT  │ LAN8720 PHY (reserviert - nicht frei!)                     │
-│ GPIO22  │ ETH_RXD0     │ LAN8720 PHY (reserviert - nicht frei!)                     │
+│ GPIO12  │ ⚠️ RESERVE   │ ⚠️ KEIN Pull-up erlaubt! Boot fail wenn HIGH beim Start!  │                     │
 │ GPIO23  │ ETH_MDC      │ LAN8720 PHY (reserviert - nicht frei!)                     │
 │ GPIO25  │ ETH_TX_EN    │ LAN8720 PHY (reserviert - nicht frei!)                     │
 │ GPIO26  │ ETH_RX_ER    │ LAN8720 PHY (reserviert - nicht frei!)                     │
@@ -320,12 +383,12 @@ Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mi
 │ GPIO0    │ MUSS LOW sein beim Flash! (Boot Mode Selection)                   │
 │ GPIO2    │ Darf keinen externen Pull-up beim Programmieren haben              │
 │ GPIO12   │ ⚠️ BOOT FAIL wenn HIGH beim Start! KEIN Pull-up erlaubt!          │
-│ GPIO15   │ Gibt Boot-Debug-Log aus (MTDO), kann stören                        │
+│ GPIO14   │ Gibt Boot-Debug-Log aus (MTDO), kann stören                        │
 └──────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 **✅ Sichere GPIOs für Pull-up-Anwendungen (z.B. 1-Wire DS18B20):**
-- **GPIO5** ✓ (aktuell verwendet für 1-Wire)
+- **GPIO35** ✓ (aktuell verwendet für 1-Wire - Input-only)
 - **GPIO13** ✓ (aktuell verwendet für MCP23017 IRQ)
 - **GPIO16** ✓ (aktuell verwendet für MPR121 Wired-OR IRQ)
 - **GPIO4** ✓ (aktuell PWM, aber sicher bei Bedarf)
@@ -419,6 +482,8 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 - **[3x PCA9535](src/main.cpp#L57)** I²C GPIO-Expander für 24 Relais-Ausgänge
 - **[1x MCP23017](src/main.cpp#L52)** I²C GPIO-Expander für 16 digitale Ein-/Ausgänge
 - **[I²C Bus](src/main.cpp#L47)** auf GPIO32 (SCL) und GPIO33 (SDA)
+- **[AC Dimmer YYAC-3S](src/main.cpp#L1195)** - GPIO4 PWM, 220V AC bis 1000W für Kronleuchter
+- **[LED Dimmer HW-517 V0.0.1](src/main.cpp#L1173)** - GPIO15 PWM, 12-24V DC bis 30A für LED-Stripes
 
 ### 🔧 Technische Features
 - **[Ethernet-Kommunikation](src/main.cpp#L132)** für stabile Netzwerkverbindung

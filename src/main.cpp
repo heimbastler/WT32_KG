@@ -8,17 +8,17 @@
 // ├────────────┬───────────────┬───────────────────────────────────────────────┤
 // │   GPIO     │   Funktion    │               Beschreibung                    │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
-// │ GPIO04  🔸 │ PWM           │ AC Dimmer Kronleuchter 220V                   │
-// │ GPIO05  🔸 │ 1-Wire        │ DS18B20 Temp-Sensor + 4.7kΩ Pull-up (sicher) │
+// │ GPIO04  🔸 │ PWM           │ AC Dimmer YYAC-3S (220V Kronleuchter)   │
+// │ GPIO35  📥 │ 1-Wire (Input) │ DS18B20 Temp-Sensor + 4.7kΩ Pull-up zu 3.3V │
 // │ GPIO13  🔸 │ IRQ Input     │ MCP23017 INTA/INTB (Schalter/Taster)         │
-// │ GPIO14  🔸 │ PWM           │ LED Dimmer Kellertreppe (MOSFET)             │
+// │ GPIO15  🔸 │ PWM           │ LED Dimmer HW-517 V0.0.1 (MOSFET)          │
 // │ GPIO16  🔸 │ IRQ Input     │ MPR121 Wired-OR IRQ (3x Touch via L.Shift)   │
 // │ GPIO17  💡 │ Status LED    │ OnBoard LED (aktiv HIGH)                      │
 // │ GPIO32  📡 │ I²C SCL       │ Clock für alle I²C Geräte + 4.7kΩ PU         │
 // │ GPIO33  📡 │ I²C SDA       │ Daten für alle I²C Geräte + 4.7kΩ PU         │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
 // │ GPIO12  ⚠️ │ RESERVE       │ ⚠️ KEIN Pull-up! Boot fail wenn HIGH!        │
-// │ GPIO15  ⚠️ │ Reserve       │ MTDO - Boot Debug Output (optional verfügbar)│
+// │ GPIO14  ⚠️ │ MTDO          │ Boot Debug Output (optional verfügbar)      │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
 // │ GPIO18  ❌ │ ETH_MDIO      │ LAN8720 PHY (reserviert - nicht frei!)       │
 // │ GPIO19  ❌ │ ETH_TXD0      │ LAN8720 PHY (reserviert - nicht frei!)       │
@@ -65,9 +65,9 @@
 // ⚠️ GPIO0:  Muss LOW sein beim Flash-Vorgang (Programmierung)
 // ⚠️ GPIO2:  Darf keinen Pull-up beim Programmieren haben
 // ⚠️ GPIO12: BOOT FAIL wenn HIGH beim Start! NIEMALS Pull-up verwenden!
-// ⚠️ GPIO15: Gibt Boot-Debug-Log aus (MTDO)
+// ⚠️ GPIO14: MTDO - Boot Debug Output
 //
-// ✅ Sichere GPIOs für Pull-ups: GPIO5, GPIO13, GPIO16, GPIO4, GPIO14
+// ✅ Sichere GPIOs für Pull-ups: GPIO35 (Input-only), GPIO13, GPIO16, GPIO4, GPIO15
 //
 // 🔸 VERWENDET → Aktuell in diesem Projekt belegt
 // ❌ RESERVIERT→ Ethernet LAN8720 oder UART (nicht verwenden!)
@@ -109,16 +109,17 @@ String getNetworkStatus();
 #define MCP23017_IRQ_PIN 13   // GPIO13 für MCP23017 INTA/INTB (Schalter/Taster)
 #define MPR121_IRQ_PIN 16     // GPIO16 für MPR121 Wired-OR IRQ (3x Touch via Level Shifter)
 
-// ---------- PWM Setup für LED Dimmer ----------
-#define LED_TREPPE_PIN 14        // GPIO14 für MOSFET Kellertreppe LEDs
-#define KRONLEUCHTER_DIMMER_PIN 4  // GPIO4 für AC Dimmer Kronleuchter 220V
-#define PWM_CHANNEL_TREPPE 0     // LEDC Kanal 0 für Kellertreppe
-#define PWM_CHANNEL_KRONLEUCHTER 1 // LEDC Kanal 1 für Kronleuchter
+// ---------- PWM Setup für LED & AC Dimmer ----------
+#define LED_DIMMER_PIN 15        // GPIO15 für MOSFET LED Dimmer HW-517 V0.0.1
+#define AC_DIMMER_PIN 4          // GPIO4 für AC Dimmer YYAC-3S (220V Kronleuchter)
+#define PWM_CHANNEL_LED 0        // LEDC Kanal 0 für LED Dimmer
+#define PWM_CHANNEL_AC 1         // LEDC Kanal 1 für AC Dimmer
 #define PWM_FREQ 5000            // 5kHz Frequenz
 #define PWM_RESOLUTION 8         // 8-bit Resolution (0-255)
 
 // ---------- 1-Wire Setup für Temperatursensoren ----------
-#define ONE_WIRE_BUS 5       // GPIO5 für DS18B20 Temperatursensor (Schaltschrank)
+#define ONE_WIRE_BUS 35      // GPIO35 für DS18B20 Temperatursensor (Schaltschrank)
+                             // 📥 GPIO35 = Input-only PIN (kein OUTPUT möglich)
                              // ⚠️ WICHTIG: GPIO12 NICHT verwenden! Boot fail wenn Pull-up HIGH!
 #define TEMPERATURE_PRECISION 10  // 10-bit = 0.25°C Auflösung
 
@@ -166,8 +167,8 @@ WebServer server(80);
 // ---------- Zustandsspeicher ----------
 uint8_t relayState[24];   // 3 PCA9535 Expander à 8 Ausgänge
 uint8_t inputState[16];   // 1 MCP23017 Expander mit 16 Ein-/Ausgängen (8 verwandt)
-uint8_t ledTreppeBrightness = 0;      // LED Kellertreppe Helligkeit (0-255)
-uint8_t kronleuchterBrightness = 0;   // Kronleuchter AC Dimmer Helligkeit (0-255)
+uint8_t ledDimmerBrightness = 0;         // LED Dimmer Helligkeit (0-255)
+uint8_t acDimmerBrightness = 0;          // AC Dimmer Helligkeit (0-255)
 bool kronleuchterDimmingUp = true;    // Dimm-Richtung für Touch-Steuerung
 unsigned long lastTouchTime = 0;      // Zeitstempel letzter Touch
 const unsigned long touchDebounceTime = 200;  // 200ms Entprellung
@@ -232,8 +233,8 @@ void toggleWohnzimmerlampe2();
 void toggleLamps();
 
 // --- PWM Funktionsprototypen ---
-void setLEDTreppeBrightness(uint8_t brightness);
-void setKronleuchterBrightness(uint8_t brightness);
+void setLEDDimmerBrightness(uint8_t brightness);
+void setACDimmerBrightness(uint8_t brightness);
 
 // --- 1-Wire Temperatursensor Funktionsprototypen ---
 void initTemperatureSensors();
@@ -339,8 +340,8 @@ void setup() {
       pcaRel3.digitalWrite(i, LOW);
     }
     // LEDs ausschalten
-    setLEDTreppeBrightness(0);
-    setKronleuchterBrightness(0);
+    setLEDDimmerBrightness(0);
+    setACDimmerBrightness(0);
   });
   
   ArduinoOTA.onEnd([]() {
@@ -370,14 +371,14 @@ void setup() {
   } else {
     Serial.println("✅ MCP23017 initialisiert auf Adresse 0x20");
     
-    // Interrupt Setup: Mirror INTA/INTB auf einen Pin, Active-Low, Open-Drain
-    mcpIn.setupInterrupts(true, false, LOW);
-    Serial.println("✅ MCP23017 Interrupts konfiguriert (mirrored, active-low)");
+    // Debugging: Erste Lese zu sehen ob I2C funktioniert
+    uint16_t testRead = mcpIn.readGPIOAB();
+    Serial.print("🔍 Test Reading GPIO: 0x");
+    Serial.println(testRead, HEX);
     
-    // GPIO13 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
+    // GPIO13 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low) - ZUERST!
     pinMode(MCP23017_IRQ_PIN, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(MCP23017_IRQ_PIN), mcpISR, FALLING);
-    Serial.println("✅ GPIO13 Interrupt-Handler registriert (FALLING edge)");
+    Serial.println("✅ GPIO13 (ESP32 Interrupt Pin) konfiguriert");
   }
   Serial.println("=========================================\n");
 
@@ -406,23 +407,40 @@ void setup() {
   }
   Serial.println("==========================================\n");
 
-  // MCP23017 Port A: GPA0-GPA6 als INPUT mit Pull-up und Interrupt
+  // MCP23017 Pin-Konfiguration: ZUERST Pins, DANN Interrupts
   Serial.println("=== MCP23017 Pin-Konfiguration ===");
-  for (int i = 0; i < 7; i++) {  // GPA0-GPA6 verwendet
-    mcpIn.pinMode(i, INPUT_PULLUP);
-    mcpIn.setupInterruptPin(i, CHANGE);  // Interrupt bei Änderung
-  }
-  mcpIn.pinMode(7, INPUT_PULLUP);  // GPA7 Reserve
-  Serial.println("✅ Port A (GPA0-GPA6): INPUT_PULLUP + Interrupt on CHANGE");
   
-  // MCP23017 Port B: GPB0-GPB7 als Reserve Eingänge
+  // Port A (GPA0-GPA7): INPUT mit aktivierten Pull-ups
+  for (int i = 0; i < 8; i++) {
+    mcpIn.pinMode(i, INPUT);
+    // 🔴 WICHTIG: GPPU = Internal 100kΩ Pull-up MANUELL via Register setzen
+    // Die Adafruit-Lib könnte INPUT_PULLUP nicht korrekt setzen!
+  }
+  Serial.println("✅ Port A (GPA0-GPA7): INPUT konfiguriert");
+  
+  // Port B (GPB0-GPB7): INPUT (Reserve)
   for (int i = 8; i < 16; i++) {
-    mcpIn.pinMode(i, INPUT_PULLUP);
+    mcpIn.pinMode(i, INPUT);
   }
-  Serial.println("✅ Port B (GPB0-GPB7): INPUT_PULLUP (Reserve)");
+  Serial.println("✅ Port B (GPB0-GPB7): INPUT (Reserve) konfiguriert");
   
-  // Initiale Interrupt-Register lesen (cleared by read)
-  mcpIn.readGPIOAB();
+  // 🔴 KRITISCH: Pull-ups via MCP23017 Registers aktivieren (nicht via Adafruit-Lib!)
+  // GPPU Register (0x0C für Port A, 0x0D für Port B): 1 = Pull-up ON
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0C);  // GPPUA Register (ziehen bei GPA0-GPA7)
+  Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
+  Wire.endTransmission();
+  
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0D);  // GPPUB Register (ziehen bei GPB0-GPB7)
+  Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
+  Wire.endTransmission();
+  Serial.println("✅ GPPU Register (0x0C, 0x0D): Pull-ups aktiviert");
+  
+  // Einmal durchlesen um initial Clear zu machen
+  uint16_t initialRead = mcpIn.readGPIOAB();
+  Serial.print("📊 Initial GPIO Reading: 0x");
+  Serial.println(initialRead, HEX);
   Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
@@ -463,7 +481,7 @@ void setup() {
   // Serial.println("=========================================\n");
   Serial.println("TouchBoards: Übersprungen (nicht angeschlossen)");
 
-  // Temperatursensoren initialisieren (DS18B20 auf GPIO5)
+  // Temperatursensoren initialisieren (DS18B20 auf GPIO35)
   Serial.println("\n=== DS18B20 Temperatursensor Initialisierung ===");
   initTemperatureSensors();
   Serial.println("==============================================\n");
@@ -499,29 +517,54 @@ void loop() {
     lastTimeoutCheck = millis();
   }
   
-  // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG ===
-  if (mcpInterruptFlag) {
-    mcpInterruptFlag = false;  // Flag zurücksetzen
+  // === MCP23017 POLLING-FALLBACK (alle 100ms zum Debuggen) ===
+  static unsigned long lastMcpPoll = 0;
+  if (millis() - lastMcpPoll > 100) {
+    lastMcpPoll = millis();
     
-    // Interrupt-Register lesen (clears interrupt)
-    uint16_t intcap = mcpIn.readGPIOAB();
+    // Alle 16 Pins auslesen (DEBUG-Info)
+    uint16_t gpio_ab = mcpIn.readGPIOAB();
     
-    Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
-    Serial.print("INTCAP Register: 0x");
-    Serial.println(intcap, HEX);
+    // Einzelne Pins splitten
+    uint8_t portA = gpio_ab & 0xFF;           // Bits 0-7 = GPA0-GPA7
+    uint8_t portB = (gpio_ab >> 8) & 0xFF;    // Bits 8-15 = GPB0-GPB7
     
-    // Eingänge lesen (über MCP23017 Port A und B)
+    // Debug Output (nur wenn sich was ändert oder alle 3 Sekunden)
+    static unsigned long lastDebugPrint = 0;
+    static uint16_t lastGpioPrint = 0xFFFF;
+    if (gpio_ab != lastGpioPrint || millis() - lastDebugPrint > 3000) {
+      Serial.print("📊 MCP23017 GPIO Status | Port A: 0x");
+      Serial.print(portA, HEX);
+      Serial.print(" Port B: 0x");
+      Serial.println(portB, HEX);
+      
+      // Genaue Pin-Analyse für Port A (die einzigen momentan genutzten Pins):
+      Serial.print("   GPA: ");
+      for (int i = 0; i < 8; i++) {
+        Serial.print((portA >> i) & 1 ? "H" : "L");
+      }
+      Serial.println();
+      
+      lastGpioPrint = gpio_ab;
+      lastDebugPrint = millis();
+    }
+    
+    // Eingänge in inputState[] speichern (für Web-UI)
     for (int i = 0; i < 8; i++) {
-      inputState[i] = mcpIn.digitalRead(i);      // Port A: GPA0-GPA7
-      inputState[i + 8] = mcpIn.digitalRead(i + 8);  // Port B: GPB0-GPB7
+      inputState[i] = (portA >> i) & 1;      // GPA0-GPA7 → inputState[0-7]
+      inputState[i + 8] = (portB >> i) & 1;  // GPB0-GPB7 → inputState[8-15]
     }
 
-    // IR-Switch Küche überwachen
+    // IR-Switch Küche Logik
     handleIRSwitchKitchen();
-
-    // Kreuzschaltungen überwachen
     handleKreuzschaltungEG();
     handleKreuzschaltungKG();
+  }
+  
+  // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG (ZUSÄTZLICH) ===
+  if (mcpInterruptFlag) {
+    mcpInterruptFlag = false;  // Flag zurücksetzen
+    Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
   }
   
   // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
@@ -639,8 +682,8 @@ void handleHome() {
   html += getNetworkStatus();
   
   // LED Dimmer
-  html += "<h3>💡 LED Dimmer Kellertreppe</h3>";
-  int brightnessPercent = (ledTreppeBrightness * 100) / 255;
+  html += "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>";
+  int brightnessPercent = (ledDimmerBrightness * 100) / 255;
   html += "<div style='margin:20px 0;'>";
   html += "<label for='ledSlider'>Helligkeit: <b>" + String(brightnessPercent) + "%</b></label><br>";
   html += "<input type='range' id='ledSlider' min='0' max='100' value='" + String(brightnessPercent) + "' ";
@@ -656,12 +699,12 @@ void handleHome() {
   html += "}";
   html += "</script>";
   
-  // Kronleuchter AC Dimmer
-  html += "<h3>💡 AC Dimmer Kronleuchter</h3>";
-  int kronleuchterPercent = (kronleuchterBrightness * 100) / 255;
+  // AC Dimmer Kronleuchter
+  html += "<h3>💡 AC Dimmer Kronleuchter (GPIO4 - YYAC-3S)</h3>";
+  int acPercent = (acDimmerBrightness * 100) / 255;
   html += "<div style='margin:20px 0;'>";
-  html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(kronleuchterPercent) + "%</b></label><br>";
-  html += "<input type='range' id='kronleuchterSlider' min='0' max='100' value='" + String(kronleuchterPercent) + "' ";
+  html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(acPercent) + "%</b></label><br>";
+  html += "<input type='range' id='kronleuchterSlider' min='0' max='100' value='" + String(acPercent) + "' ";
   html += "style='width:300px;' oninput='updateKronleuchter(this.value)'><br>";
   html += "<span style='font-size:12px;'>0%</span>";
   html += "<span style='float:right;font-size:12px;'>100%</span>";
@@ -754,10 +797,10 @@ void handleHome() {
   
   // R11 - Kronleuchter (mit Dimmerfunktion)
   String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
-  int kronPercent = (kronleuchterBrightness * 100) / 255;
+  int acPercent = (acDimmerBrightness * 100) / 255;
   html += "<a href='/toggle?r=11' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
   if (relayState[11]) {
-    html += " (" + String(kronPercent) + "%)";
+    html += " (" + String(acPercent) + "%)";
   }
   html += "</a><br>";
   
@@ -1125,12 +1168,12 @@ void toggleLamps() {
 }
 
 // ======================================================
-// PWM LED Dimmer Funktionen
+// PWM LED Dimmer Funktionen (GPIO15, HW-517 V0.0.1)
 // ======================================================
-void setLEDTreppeBrightness(uint8_t brightness) {
-  ledTreppeBrightness = brightness;
-  ledcWrite(LED_TREPPE_PIN, brightness);
-  Serial.println("LED Treppe Helligkeit: " + String(brightness) + " (" + String(brightness * 100 / 255) + "%)");
+void setLEDDimmerBrightness(uint8_t brightness) {
+  ledDimmerBrightness = brightness;
+  ledcWrite(PWM_CHANNEL_LED, brightness);  // 🔴 BUGFIX: PWM_CHANNEL nicht LED_DIMMER_PIN!
+  Serial.println("LED Dimmer (HW-517) Helligkeit: " + String(brightness) + " (" + String(brightness * 100 / 255) + "%)");
 }
 
 void handleLEDDimmer() {
@@ -1139,7 +1182,7 @@ void handleLEDDimmer() {
     if (brightness >= 0 && brightness <= 100) {
       // Umrechnung von Prozent (0-100) zu PWM-Wert (0-255)
       uint8_t pwmValue = (brightness * 255) / 100;
-      setLEDTreppeBrightness(pwmValue);
+      setLEDDimmerBrightness(pwmValue);
     }
   }
   server.sendHeader("Location", "/");
@@ -1147,21 +1190,21 @@ void handleLEDDimmer() {
 }
 
 // ======================================================
-// Kronleuchter AC Dimmer Funktionen
+// AC Dimmer Funktionen (GPIO4, YYAC-3S)
 // ======================================================
-void setKronleuchterBrightness(uint8_t brightness) {
-  kronleuchterBrightness = brightness;
-  ledcWrite(KRONLEUCHTER_DIMMER_PIN, brightness);
-  Serial.println("Kronleuchter Helligkeit: " + String(brightness) + " (" + String(brightness * 100 / 255) + "%)");
+void setACDimmerBrightness(uint8_t brightness) {
+  acDimmerBrightness = brightness;
+  ledcWrite(PWM_CHANNEL_AC, brightness);  // 🔴 BUGFIX: PWM_CHANNEL nicht AC_DIMMER_PIN!
+  Serial.println("AC Dimmer (YYAC-3S) Helligkeit: " + String(brightness) + " (" + String(brightness * 100 / 255) + "%)");
 }
 
-void handleKronleuchterDimmer() {
+void handleACDimmer() {
   if (server.hasArg("brightness")) {
     int brightness = server.arg("brightness").toInt();
     if (brightness >= 0 && brightness <= 100) {
       // Umrechnung von Prozent (0-100) zu PWM-Wert (0-255)
       uint8_t pwmValue = (brightness * 255) / 100;
-      setKronleuchterBrightness(pwmValue);
+      setACDimmerBrightness(pwmValue);
       
       // Auch das Relais entsprechend schalten
       if (brightness > 0) {
@@ -1218,20 +1261,37 @@ void dimKronleuchter(bool dimUp) {
 // 1-Wire Temperatursensor Funktionen (1x DS18B20 für Schaltschrank)
 // ======================================================
 void initTemperatureSensors() {
+  Serial.println("🌡️  1-Wire Bus starten (GPIO35 - Input-only)...");
   temperaturSensoren.begin();
-  uint8_t sensorCount = temperaturSensoren.getDeviceCount();
   
-  Serial.println("1-Wire Temperatursensor initialisiert");
-  Serial.println("Sensoren gefunden: " + String(sensorCount));
+  // Kurze Pause für 1-Wire Enumeration
+  delay(100);
+  
+  uint8_t sensorCount = temperaturSensoren.getDeviceCount();
+  Serial.println("📊 DS18B20 Sensoren gefunden: " + String(sensorCount));
   
   if (sensorCount > 0) {
     DeviceAddress tempDeviceAddress;
     if (temperaturSensoren.getAddress(tempDeviceAddress, 0)) {
+      // Zeige die Sensor-ROM-Adresse (für Debugging)
+      Serial.print("   ROM Adresse: ");
+      for (uint8_t i = 0; i < 8; i++) {
+        Serial.print("0x");
+        if (tempDeviceAddress[i] < 0x10) Serial.print("0");
+        Serial.print(tempDeviceAddress[i], HEX);
+        Serial.print(" ");
+      }
+      Serial.println();
+      
       temperaturSensoren.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
-      Serial.println("DS18B20 Sensor konfiguriert (Schaltschrank)");
+      Serial.println("✅ DS18B20 Sensor konfiguriert");
+      Serial.println("   Genauigkeit: 10-bit (0.25°C), Konversionszeit: ~188ms");
+    } else {
+      Serial.println("❌ Fehler: ROM-Adresse konnte nicht gelesen werden!");
     }
   } else {
-    Serial.println("WARNUNG: Kein DS18B20 Sensor gefunden!");
+    Serial.println("❌ FEHLER: Kein DS18B20 Sensor auf GPIO35 gefunden!");
+    Serial.println("   → Überprüfe: Verdrahtung, 4.7kΩ Pull-up zu 3.3V, Sensor-Kontakte");
   }
   
   schaltschrankTemp = -999.0;
@@ -1239,21 +1299,32 @@ void initTemperatureSensors() {
 }
 
 void updateTemperatures() {
+  static unsigned long lastDebugPrint = 0;
+  
   temperaturSensoren.requestTemperatures();
-  delay(100); // Kurz warten für Messung
+  // ⏱️ WICHTIG: 10-bit Genauigkeit braucht ~188ms für Konversion (nicht 100ms!)
+  delay(200);
   
   float temp = temperaturSensoren.getTempCByIndex(0);
+  
+  // Debug: Zeige alle 5 Sekunden den Sensor-Status
+  if (millis() - lastDebugPrint > 5000) {
+    Serial.print("📊 Temperature Read: ");
+    Serial.print(temp);
+    Serial.println("°C");
+    lastDebugPrint = millis();
+  }
   
   if (temp != DEVICE_DISCONNECTED_C) {
     // Nur bei Änderung um mindestens 0.1°C aktualisieren
     if (abs(temp - lastSchaltschrankTemp) >= 0.1) {
-      lastSchaltschrankTemp = schaltschrankTemp;
+      lastSchaltschrankTemp = temp;  // 🔴 BUGFIX: Speichere neuen Wert als Vergleichswert
       schaltschrankTemp = temp;
-      Serial.println("Schaltschrank Temperatur: " + String(temp, 1) + "°C");
+      Serial.println("✅ Schaltschrank Temperatur aktualisiert: " + String(temp, 1) + "°C");
     }
   } else {
     schaltschrankTemp = -999.0; // Fehlercode für nicht angeschlossen
-    Serial.println("FEHLER: DS18B20 Sensor nicht erreichbar!");
+    Serial.println("❌ FEHLER: DS18B20 Sensor nicht erreichbar oder nicht korrekt verdrahtet!");
   }
 }
 
@@ -1263,7 +1334,7 @@ String getTemperatureHTML() {
   html += "<th>Komponente</th><th>Wert</th><th>Status</th></tr>";
   
   html += "<tr>";
-  html += "<td>DS18B20 Sensor (GPIO5)</td>";
+  html += "<td>DS18B20 Sensor (GPIO35)</td>";
   
   if (schaltschrankTemp != -999.0) {
     String tempColor = "black";
@@ -1279,7 +1350,7 @@ String getTemperatureHTML() {
   }
   html += "</tr>";
   html += "</table>";
-  html += "<p style='font-size:12px;color:gray;'>🔄 Kontinuierliche Messung | GPIO12 mit 4.7kΩ Pull-up</p>";
+  html += "<p style='font-size:12px;color:gray;'>🔄 Kontinuierliche Messung | GPIO35 (Input-only) mit 4.7kΩ Pull-up zu 3.3V</p>";
   
   return html;
 }
