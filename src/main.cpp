@@ -727,6 +727,15 @@ String getHTMLHeader(String activeTab) {
   html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
   html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
   html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
+  // Button-Text für normale Relais updaten (4-23)
+  html += "if(r>=4){";
+  html += "var text=btn.textContent;";
+  html += "if(text.includes(':')){";
+  html += "var parts=text.split(':');";
+  html += "parts[parts.length-1]=data.state==1?' EIN':' AUS';";
+  html += "btn.textContent=parts.join(':');";
+  html += "}";
+  html += "}";
   html += "}).catch(function(error){";
   html += "console.error('Error:',error);";
   html += "});";
