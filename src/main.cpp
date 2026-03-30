@@ -184,6 +184,10 @@ uint8_t lastIRSwitchRight = LOW;  // Letzter Zustand rechter Taster
 uint8_t kreuzstateEG = 1;         // EG Kreuzschaltung Zustand (Bit-kombiniert)
 uint8_t kreuzstateKG = 1;         // KG Kreuzschaltung Zustand (Bit-kombiniert)
 
+// ---------- Boot-Verzögerung für Kreuzschaltungen ----------
+unsigned long bootTime = 0;       // Zeitstempel beim Boot
+const unsigned long bootDelay = 5000;  // 5 Sekunden Verzögerung nach Boot
+
 // ---------- Temperatursensor Zustand (1x DS18B20 für Schaltschrank) ----------
 float schaltschrankTemp = -999.0;       // Schaltschrank Temperatur (°C)
 float lastSchaltschrankTemp = -999.0;   // Letzte Temperatur für Änderungserkennung
@@ -298,6 +302,10 @@ void IRAM_ATTR mcpISR() {
 void setup() {
   Serial.begin(115200);
   Serial.println("=== WT32-KG Smart Home Controller ===");
+  
+  // Boot-Zeitstempel setzen für Kreuzschaltungs-Verzögerung
+  bootTime = millis();
+  
   Wire.begin(SDA_PIN, SCL_PIN);
   delay(500);
 
@@ -661,10 +669,14 @@ void loop() {
       inputState[i + 8] = (portB >> i) & 1;
     }
     
-    // Schalter-Logik verarbeiten
-    handleIRSwitchKitchen();
-    handleKreuzschaltungEG();
-    handleKreuzschaltungKG();
+    // Schalter-Logik verarbeiten (nur nach Boot-Verzögerung)
+    if (millis() - bootTime > bootDelay) {
+      handleIRSwitchKitchen();
+      handleKreuzschaltungEG();
+      handleKreuzschaltungKG();
+    } else {
+      Serial.println("⏳ Boot-Verzögerung aktiv, Schaltlogik übersprungen");
+    }
   }
   
   // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
