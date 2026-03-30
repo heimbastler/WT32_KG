@@ -792,8 +792,8 @@ String getHTMLHeader(String activeTab) {
   html += "var cell=document.getElementById('input-'+i+'-status');";
   html += "if(cell){";
   html += "var state=data.inputs[i];";
-  html += "cell.textContent=state?'HIGH':'LOW';";
-  html += "cell.style.backgroundColor=state?'lightgreen':'lightcoral';";
+  html += "cell.textContent=state?'OPEN':'CLOSED';";
+  html += "cell.style.backgroundColor=state?'lightcoral':'lightgreen';";
   html += "}";
   html += "}";
   html += "}).catch(function(error){";
@@ -992,8 +992,8 @@ void handleHome() {
   };
   
   for (int i = 0; i < 16; i++) {
-    String status = inputState[i] ? "HIGH" : "LOW";
-    String color = inputState[i] ? "lightgreen" : "lightcoral";
+    String status = inputState[i] ? "OPEN" : "CLOSED";
+    String color = inputState[i] ? "lightcoral" : "lightgreen";
     html += "<tr>";
     html += "<td>IN" + String(i) + "</td>";
     html += "<td>" + inputLabels[i] + "</td>";
