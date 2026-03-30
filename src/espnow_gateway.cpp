@@ -13,7 +13,10 @@ bool espnowPairingMode = false;
 void initESPNowGateway() {
   Serial.println("\n=== ESP-NOW Gateway Initialisierung ===");
   
-  // WiFi für ESP-NOW initialisieren (kein AP/STA, nur für ESP-NOW)
+  // ⚠️ WICHTIG: WiFi nur für ESP-NOW, KEIN Station/AP Mode für Internet!
+  // WiFi.mode(WIFI_STA) aktiviert WiFi-Radio für ESP-NOW
+  // WiFi.disconnect() verhindert Verbindung zu Access Points
+  // → Ethernet bleibt primäres Netzwerk-Interface für OTA/Webserver!
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);

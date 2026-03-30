@@ -199,6 +199,57 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 └─────────────┴─────────┴──────────────────────────────────────┘
 ```
 
+---
+
+## 🌐 Netzwerk-Architektur
+
+### 📡 Dual-Netzwerk-Konfiguration
+
+Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
+
+```
+╔═════════════════════════════════════════════════════════════════╗
+║                    NETZWERK-ARCHITEKTUR                         ║
+╠═════════════════════════════════════════════════════════════════╣
+║                                                                 ║
+║  ┌─────────────────────────────────────────────────────────┐   ║
+║  │  🔌 ETHERNET (LAN8720 PHY)                              │   ║
+║  │  ───────────────────────────────────────────────────    │   ║
+║  │  ✅ Primäres Netzwerk-Interface                         │   ║
+║  │  ✅ Statische IP: 192.168.178.195                       │   ║
+║  │  ✅ OTA Updates (Port 3232)                             │   ║
+║  │  ✅ Webserver (Port 80)                                 │   ║
+║  │  ✅ mDNS: wt32-kg.local                                 │   ║
+║  │                                                          │   ║
+║  │  📋 Zweck: Internet, Home Assistant, Browser-Zugriff   │   ║
+║  └─────────────────────────────────────────────────────────┘   ║
+║                                                                 ║
+║  ┌─────────────────────────────────────────────────────────┐   ║
+║  │  📶 WiFi (ESP32 Radio)                                  │   ║
+║  │  ────────────────────────────────────────────────       │   ║
+║  │  ✅ NUR für ESP-NOW Peer-to-Peer                        │   ║
+║  │  ✅ WIFI_STA Mode mit disconnect()                      │   ║
+║  │  ❌ KEIN Access Point Mode                              │   ║
+║  │  ❌ KEINE Internet-Verbindung über WiFi                 │   ║
+║  │  ❌ KEIN OTA über WiFi                                  │   ║
+║  │                                                          │   ║
+║  │  📋 Zweck: ESP-NOW Gateway für Sensoren/Aktoren        │   ║
+║  └─────────────────────────────────────────────────────────┘   ║
+║                                                                 ║
+╚═════════════════════════════════════════════════════════════════╝
+```
+
+**⚠️ WICHTIG:**
+- **Ethernet** ist das **einzige** Interface für OTA-Updates und Webserver
+- **WiFi** dient **ausschließlich** ESP-NOW (kein IP-Stack)
+- Beide Interfaces können **gleichzeitig** genutzt werden ohne Konflikte
+- Initialisierungsreihenfolge im Code:
+  1. `initNetworking()` → Ethernet, statische IP
+  2. `ArduinoOTA.begin()` → Bindet an Ethernet-Interface
+  3. `initESPNowGateway()` → WiFi.mode(WIFI_STA) für ESP-NOW
+
+---
+
 ### 📌 Komplette GPIO-Übersicht WT32-ETH01
 
 **Alle GPIO-Zuordnungen (jede GPIO nur 1x aufgeführt - keine Redundanzen!):**

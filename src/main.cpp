@@ -330,14 +330,17 @@ void setup() {
   initNetworking();
 
   // Warte bis gültige IP-Adresse verfügbar ist (wichtig für OTA!)
-  Serial.println("\n=== OTA Setup ===");
+  Serial.println("\n=== OTA Setup (Ethernet Only) ===");
   if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
     Serial.println("⚠️  WARNING: Keine IP-Adresse - OTA wird nicht verfügbar sein!");
   } else {
-    Serial.print("📡 IP-Adresse: ");
+    Serial.print("📡 Ethernet IP: ");
     Serial.println(ETH.localIP());
+    Serial.println("   OTA läuft NUR über Ethernet (LAN), NICHT über WiFi!");
     
     // OTA Setup nach Netzwerk-Initialisierung
+    // ⚠️ WICHTIG: OTA nutzt automatisch das erste verfügbare Interface mit IP
+    // Da Ethernet zuerst initialisiert wird, bindet OTA an ETH Interface
     ArduinoOTA.setHostname("WT32-KG-Controller");
     ArduinoOTA.setPassword("WT32_SecureOTA_2024"); // Sicheres Passwort
     ArduinoOTA.setPort(3232);  // Explizit Port 3232 setzen
@@ -520,6 +523,9 @@ void setup() {
   Serial.println("📊 Führe initiale Temperaturmessung durch...");
   updateTemperatures();
   
+  // ⚠️ NACH Ethernet/OTA Setup, damit OTA bereits an ETH gebunden ist
+  // WiFi.mode(WIFI_STA) in ESP-NOW nutzt nur WiFi-Radio für Peer-to-Peer
+  // Ethernet bleibt primäres Interface für Internet/OTA/Webserver
   Serial.println("==============================================\n");
 
   // ESP-NOW Gateway initialisieren

@@ -16,9 +16,12 @@ String getNetworkStatus();
 // ======================================================
 // Network Initialisierung (Ethernet Only)
 // ⚠️  ETHERNET GPIO KONFIGURATION - NIEMALS ÄNDERN! ⚠️
+// ⚠️  WiFi wird NUR für ESP-NOW verwendet (siehe espnow_gateway.cpp)
+// ⚠️  KEIN WiFi-STA oder WiFi-AP für Internet-Verbindung!
 // ======================================================
 void initNetworking() {
   Serial.println("=== Network Setup (Ethernet Only) ===");
+  Serial.println("    WiFi wird später NUR für ESP-NOW initialisiert!");
   
   // ✅ GEPRÜFT & FUNKTIONIEREND (30.03.2026)
   // ETH.begin() ohne Parameter verwendet WT32-ETH01 Board-Defaults
