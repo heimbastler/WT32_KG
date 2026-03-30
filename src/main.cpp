@@ -486,9 +486,14 @@ void setup() {
   // Serial.println("=========================================\n");
   Serial.println("TouchBoards: Übersprungen (nicht angeschlossen)");
 
-  // Temperatursensoren initialisieren (DS18B20 auf GPIO35)
+  // Temperatursensoren initialisieren (DS18B20 auf GPIO4)
   Serial.println("\n=== DS18B20 Temperatursensor Initialisierung ===");
   initTemperatureSensors();
+  
+  // Initiale Temperaturmessung durchführen (damit Web UI sofort Wert hat)
+  Serial.println("📊 Führe initiale Temperaturmessung durch...");
+  updateTemperatures();
+  
   Serial.println("==============================================\n");
 
   // ESP-NOW Gateway initialisieren
@@ -1377,7 +1382,7 @@ String getTemperatureHTML() {
   }
   html += "</tr>";
   html += "</table>";
-  html += "<p style='font-size:12px;color:gray;'>🔄 Kontinuierliche Messung | GPIO35 (Input-only) mit 4.7kΩ Pull-up zu 3.3V</p>";
+  html += "<p style='font-size:12px;color:gray;'>🔄 Kontinuierliche Messung alle 10 Sekunden | GPIO4 mit internem Pull-up</p>";
   
   return html;
 }
