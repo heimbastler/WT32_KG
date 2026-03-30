@@ -86,6 +86,7 @@
 #include <ETH.h>
 #include <WiFi.h>  // WiFi für ESP-NOW benötigt (nicht für STA/AP)
 #include <ArduinoOTA.h>
+#include <ESPmDNS.h>  // mDNS für Hostname-Auflösung
 #include <Adafruit_MCP23X17.h> // 16-Bit GPIO Expander für Eingänge
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
@@ -328,11 +329,20 @@ void setup() {
   // Netzwerk initialisieren (Ethernet + WiFi + AP)
   initNetworking();
 
-  // OTA Setup nach Netzwerk-Initialisierung
-  ArduinoOTA.setHostname("WT32-KG-Controller");
-  ArduinoOTA.setPassword("WT32_SecureOTA_2024"); // Sicheres Passwort
-  
-  ArduinoOTA.onStart([]() {
+  // Warte bis gültige IP-Adresse verfügbar ist (wichtig für OTA!)
+  Serial.println("\n=== OTA Setup ===");
+  if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
+    Serial.println("⚠️  WARNING: Keine IP-Adresse - OTA wird nicht verfügbar sein!");
+  } else {
+    Serial.print("📡 IP-Adresse: ");
+    Serial.println(ETH.localIP());
+    
+    // OTA Setup nach Netzwerk-Initialisierung
+    ArduinoOTA.setHostname("WT32-KG-Controller");
+    ArduinoOTA.setPassword("WT32_SecureOTA_2024"); // Sicheres Passwort
+    ArduinoOTA.setPort(3232);  // Explizit Port 3232 setzen
+    
+    ArduinoOTA.onStart([]() {
     String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
     Serial.println("Start updating " + type);
     // Sicherheitshalber alle Relais ausschalten während Update
@@ -364,7 +374,23 @@ void setup() {
   });
   
   ArduinoOTA.begin();
-  Serial.println("OTA Ready - Hostname: WT32-KG-Controller");
+  Serial.println("✅ OTA Ready - Hostname: WT32-KG-Controller");
+  Serial.print("   Port: 3232, IP: ");
+  Serial.println(ETH.localIP());
+  Serial.println("   Upload-Befehl: pio run -e wt32-eth01-ota -t upload");
+  
+  // mDNS starten für Hostname-Auflösung
+  if (MDNS.begin(HOSTNAME)) {
+    Serial.print("✅ mDNS Responder gestartet: ");
+    Serial.print(HOSTNAME);
+    Serial.println(".local");
+    MDNS.addService("http", "tcp", 80);  // HTTP Service ankündigen
+    MDNS.addService("arduino", "tcp", 3232);  // OTA Service ankündigen
+  } else {
+    Serial.println("⚠️  mDNS Responder konnte nicht gestartet werden");
+  }
+  }
+  Serial.println("==================\n");
 
   // MCP23017 Input Expander - DEAKTIVIERT (nicht angeschlossen)
   // ============================================================
