@@ -703,14 +703,22 @@ String getHTMLHeader(String activeTab) {
   // JavaScript für AJAX-Requests ohne Seiten-Reload
   html += "<script>";
   html += "function toggleRelay(r){";
-  html += "fetch('/toggle?r='+r).then(()=>{";
-  // Button visuell updaten ohne Reload
+  html += "fetch('/toggle?r='+r).then(response=>response.json()).then(data=>{";
+  // Button finden und Status aktualisieren basierend auf Server-Response
   html += "var btn=event.target;";
-  html += "if(btn.classList.contains('btn-on')){";
-  html += "btn.classList.remove('btn-on');btn.classList.add('btn-off');";
-  html += "}else if(btn.classList.contains('btn-off')){";
-  html += "btn.classList.remove('btn-off');btn.classList.add('btn-on');";
+  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
+  html += "if(data.state==1){";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}";  // Rollos: aktiv = neutral
+  html += "else{btn.classList.add('btn-on');}";  // Lampen: an = grün
+  html += "}else{";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}";  // Rollos: inaktiv = orange
+  html += "else{btn.classList.add('btn-off');}";  // Lampen: aus = rot
   html += "}";
+  // Button-Text für Rollos updaten
+  html += "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
+  html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
+  html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
   html += "});";
   html += "}";
   html += "</script>";
@@ -1063,9 +1071,10 @@ void handleToggle() {
     }
   }
   
-  // AJAX-Support: Kein Redirect, nur Status 200 zurück
-  // Browser bleibt auf aktueller Seite mit aktueller Scroll-Position
-  server.send(200, "text/plain", "OK");
+  // AJAX-Support: JSON mit aktuellem Status zurückgeben
+  // Browser kann Button-Status dynamisch updaten ohne Seiten-Reload
+  String response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + "}";
+  server.send(200, "application/json", response);
 }
 
 
