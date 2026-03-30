@@ -1067,10 +1067,6 @@ void handleToggle() {
   // Browser bleibt auf aktueller Seite mit aktueller Scroll-Position
   server.send(200, "text/plain", "OK");
 }
-  
-  server.sendHeader("Location", "/");
-  server.send(303);
-}
 
 
 
