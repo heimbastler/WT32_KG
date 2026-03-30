@@ -8,12 +8,14 @@
 // ├────────────┬───────────────┬───────────────────────────────────────────────┤
 // │   GPIO     │   Funktion    │               Beschreibung                    │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
-// │ GPIO04  🔸 │ PWM           │ AC Dimmer YYAC-3S (220V Kronleuchter)   │
+// │ GPIO02  🔸 │ PWM           │ AC Dimmer YYAC-3S (220V) ⚠️ Boot-kritisch!   │
+// │ GPIO04  🔸 │ 1-Wire        │ DS18B20 Temp-Sensor + Pull-up                │
 // │ GPIO14  🔸 │ PWM           │ LED Dimmer HW-517 V0.0.1 (MOSFET)          │
-// │ GPIO35  📥 │ 1-Wire (Input) │ DS18B20 Temp-Sensor + 4.7kΩ Pull-up zu 3.3V │
+// │ GPIO17  💡 │ Status LED    │ OnBoard LED (aktiv HIGH)                      │
+// │ GPIO32  📡 │ I²C SCL       │ Clock für alle I²C Geräte + 4.7kΩ PU         │
+// │ GPIO33  📡 │ I²C SDA       │ Daten für alle I²C Geräte + 4.7kΩ PU         │
 // │ GPIO36  📥 │ IRQ Input     │ MPR121 Wired-OR IRQ (3x Touch via L.Shift)   │
 // │ GPIO39  📥 │ IRQ Input     │ MCP23017 INTA/INTB (Schalter/Taster)         │
-// │ GPIO17  💡 │ Status LED    │ OnBoard LED (aktiv HIGH)                      │
 // │ GPIO32  📡 │ I²C SCL       │ Clock für alle I²C Geräte + 4.7kΩ PU         │
 // │ GPIO33  📡 │ I²C SDA       │ Daten für alle I²C Geräte + 4.7kΩ PU         │
 // ├────────────┼───────────────┼───────────────────────────────────────────────┤
@@ -111,14 +113,14 @@ String getNetworkStatus();
 
 // ---------- PWM Setup für LED & AC Dimmer ----------
 #define LED_DIMMER_PIN 14        // GPIO14 für MOSFET LED Dimmer HW-517 V0.0.1
-#define AC_DIMMER_PIN 4          // GPIO4 für AC Dimmer YYAC-3S (220V Kronleuchter)
+#define AC_DIMMER_PIN 2          // GPIO2 für AC Dimmer YYAC-3S (220V Kronleuchter) ⚠️ Boot-kritisch!
 #define PWM_CHANNEL_LED 0        // LEDC Kanal 0 für LED Dimmer
 #define PWM_CHANNEL_AC 1         // LEDC Kanal 1 für AC Dimmer
 #define PWM_FREQ 5000            // 5kHz Frequenz
 #define PWM_RESOLUTION 8         // 8-bit Resolution (0-255)
 
 // ---------- 1-Wire Setup für Temperatursensoren ----------
-#define ONE_WIRE_BUS 35      // GPIO35 für DS18B20 Temperatursensor (Schaltschrank)
+#define ONE_WIRE_BUS 4       // GPIO4 für DS18B20 Temperatursensor (Schaltschrank)
                              // 📥 GPIO35 = Input-only PIN (kein OUTPUT möglich)
                              // ⚠️ WICHTIG: GPIO12 NICHT verwenden! Boot fail wenn Pull-up HIGH!
 #define TEMPERATURE_PRECISION 10  // 10-bit = 0.25°C Auflösung
@@ -268,7 +270,7 @@ const unsigned long rolloActiveTime = 60000; // ms, wie lange das Relais anzieht
 
 // --- Zeitsteuerung für Temperaturmessung ---
 unsigned long lastTempUpdate = 0;
-const unsigned long tempUpdateInterval = 60000; // 1 Minute
+const unsigned long tempUpdateInterval = 10000; // 10 Sekunden (nicht zu schnell, aber regelmäßig)
 
 // --- Zeitsteuerung für I2C Lese-Operationen (Throttling) ---
 unsigned long lastI2CRead = 0;
@@ -1265,11 +1267,17 @@ void dimKronleuchter(bool dimUp) {
 // 1-Wire Temperatursensor Funktionen (1x DS18B20 für Schaltschrank)
 // ======================================================
 void initTemperatureSensors() {
-  Serial.println("🌡️  1-Wire Bus starten (GPIO35 - Input-only)...");
+  Serial.println("🌡️  1-Wire Bus starten (GPIO4)...");
+  Serial.println("✅ GPIO4 = Standard GPIO mit internem Pull-up möglich!");
+  
+  // GPIO4 mit internem Pull-up aktivieren
+  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
+  delay(100);
+  
   temperaturSensoren.begin();
   
-  // Kurze Pause für 1-Wire Enumeration
-  delay(100);
+  // Längere Pause für zuverlässige 1-Wire Enumeration (besonders wichtig bei Input-only Pins)
+  delay(500);
   
   uint8_t sensorCount = temperaturSensoren.getDeviceCount();
   Serial.println("📊 DS18B20 Sensoren gefunden: " + String(sensorCount));
@@ -1278,7 +1286,7 @@ void initTemperatureSensors() {
     DeviceAddress tempDeviceAddress;
     if (temperaturSensoren.getAddress(tempDeviceAddress, 0)) {
       // Zeige die Sensor-ROM-Adresse (für Debugging)
-      Serial.print("   ROM Adresse: ");
+      Serial.print("✅ Sensor erkannt! ROM Adresse: ");
       for (uint8_t i = 0; i < 8; i++) {
         Serial.print("0x");
         if (tempDeviceAddress[i] < 0x10) Serial.print("0");
@@ -1290,12 +1298,17 @@ void initTemperatureSensors() {
       temperaturSensoren.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
       Serial.println("✅ DS18B20 Sensor konfiguriert");
       Serial.println("   Genauigkeit: 10-bit (0.25°C), Konversionszeit: ~188ms");
+      Serial.println("✅ Polling-Intervall: 10 Sekunden");
     } else {
       Serial.println("❌ Fehler: ROM-Adresse konnte nicht gelesen werden!");
     }
   } else {
-    Serial.println("❌ FEHLER: Kein DS18B20 Sensor auf GPIO35 gefunden!");
-    Serial.println("   → Überprüfe: Verdrahtung, 4.7kΩ Pull-up zu 3.3V, Sensor-Kontakte");
+    Serial.println("❌ FEHLER: Kein DS18B20 Sensor auf GPIO4 gefunden!");
+    Serial.println("⚠️  → Überprüfe:");
+    Serial.println("   1. Verdrahtung: VCC=3.3V, GND=GND, Data=GPIO4");
+    Serial.println("   2. 4.7kΩ Pull-up Widerstand (optional, GPIO4 hat internen Pull-up)");
+    Serial.println("   3. Sensor-Kontakte (Kurzschluss? Wackelkontakt?)");
+    Serial.println("   4. Sensor-Typ: DS18B20 (nicht DHT22 oder andere!)");
   }
   
   schaltschrankTemp = -999.0;
@@ -1305,30 +1318,40 @@ void initTemperatureSensors() {
 void updateTemperatures() {
   static unsigned long lastDebugPrint = 0;
   
+  // Temperaturkonversion starten
   temperaturSensoren.requestTemperatures();
-  // ⏱️ WICHTIG: 10-bit Genauigkeit braucht ~188ms für Konversion (nicht 100ms!)
+  // ⏱️ WICHTIG: 10-bit Genauigkeit braucht ~188ms für Konversion
   delay(200);
   
   float temp = temperaturSensoren.getTempCByIndex(0);
   
-  // Debug: Zeige alle 5 Sekunden den Sensor-Status
-  if (millis() - lastDebugPrint > 5000) {
-    Serial.print("📊 Temperature Read: ");
-    Serial.print(temp);
-    Serial.println("°C");
+  // Debug: Zeige alle 10 Sekunden den Sensor-Status
+  if (millis() - lastDebugPrint > 10000) {
+    Serial.print("📊 1-Wire Temperature Read: ");
+    if (temp != DEVICE_DISCONNECTED_C) {
+      Serial.print(temp, 2);
+      Serial.println("°C");
+    } else {
+      Serial.println("DISCONNECTED");
+    }
     lastDebugPrint = millis();
   }
   
-  if (temp != DEVICE_DISCONNECTED_C) {
+  if (temp != DEVICE_DISCONNECTED_C && temp > -55.0 && temp < 125.0) {
     // Nur bei Änderung um mindestens 0.1°C aktualisieren
     if (abs(temp - lastSchaltschrankTemp) >= 0.1) {
-      lastSchaltschrankTemp = temp;  // 🔴 BUGFIX: Speichere neuen Wert als Vergleichswert
+      lastSchaltschrankTemp = temp;
       schaltschrankTemp = temp;
       Serial.println("✅ Schaltschrank Temperatur aktualisiert: " + String(temp, 1) + "°C");
     }
   } else {
     schaltschrankTemp = -999.0; // Fehlercode für nicht angeschlossen
-    Serial.println("❌ FEHLER: DS18B20 Sensor nicht erreichbar oder nicht korrekt verdrahtet!");
+    if (temp == DEVICE_DISCONNECTED_C) {
+      Serial.println("❌ DS18B20 Sensor nicht erreichbar (DEVICE_DISCONNECTED)");
+      Serial.println("⚠️  Prüfe: Pull-up Widerstand, Verdrahtung, Sensor-Kontakte");
+    } else {
+      Serial.println("❌ DS18B20 ungültiger Wert: " + String(temp) + "°C (außerhalb -55°C bis 125°C)");
+    }
   }
 }
 
@@ -1338,7 +1361,7 @@ String getTemperatureHTML() {
   html += "<th>Komponente</th><th>Wert</th><th>Status</th></tr>";
   
   html += "<tr>";
-  html += "<td>DS18B20 Sensor (GPIO35)</td>";
+  html += "<td>DS18B20 Sensor (GPIO4)</td>";
   
   if (schaltschrankTemp != -999.0) {
     String tempColor = "black";

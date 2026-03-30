@@ -33,8 +33,8 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
     485_EN (GPIO33)   6 │●                        ●│ 19  IO36 (GPIO36) - MPR121 IRQ (Input-only)
     ---             7 │●                        ●│ 18  IO14 (GPIO14) - LED Dimmer PWM
     TXD (GPIO17)      8 │●                        ●│ 17  IO15 (GPIO15) - Reserve
-    RXD (GPIO05)      9 │●                        ●│ 16  IO04 (GPIO04) - AC Dimmer PWM
-    3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - 1-Wire DS18B20 (Input-only)
+    RXD (GPIO05)      9 │●                        ●│ 16  IO04 (GPIO04) - 1-Wire DS18B20
+    3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - Reserve (Input-only)
     GND (Masse)      11 │●                        ●│ 14  IO12 (GPIO12) - ⚠️ BOOT fail wenn HIGH!
     5V (+5V In)      12 │●                        ●│ 13  IO2  (GPIO2)  - NO PROG if HIGH
                         │                          │
@@ -235,13 +235,14 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║  GPIO01   ║ TX0/UART     ║ ✅ Serial TX (Programming & Debug) - zu PC/USB Adapter                                                ║
 ║  GPIO03   ║ RX0/UART     ║ ✅ Serial RX (Programming & Debug) - von PC/USB Adapter                                               ║
-║  GPIO04   ║ PWM Out      ║ ✅ AC Dimmer YYAC-3S (220V Kronleuchter) - 0-255 PWM Steuerung                                        ║
+║  GPIO02   ║ PWM Out      ║ ✅ AC Dimmer YYAC-3S (220V Kronleuchter) - 0-255 PWM Steuerung ⚠️ Boot-kritisch!                     ║
+║  GPIO04   ║ 1-Wire In    ║ ✅ DS18B20 Temp-Sensor (4.7kΩ Pull-up zu 3.3V oder interner Pull-up)                                  ║
 ║  GPIO14   ║ PWM Out      ║ ✅ LED Dimmer HW-517 MOSFET (12-24V DC LEDs) - 0-255 PWM Steuerung                                    ║
 ║  GPIO15   ║ Reserve      ║ ⚪ RESERVE - OUTPUT möglich                                                                            ║
 ║  GPIO17   ║ Status LED   ║ ✅ OnBoard LED (aktiv HIGH) - System-Status Anzeige                                                    ║
 ║  GPIO32   ║ I²C SCL      ║ ✅ I²C Clock für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                            ║
 ║  GPIO33   ║ I²C SDA      ║ ✅ I²C Data für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                             ║
-║  GPIO35   ║ 1-Wire In    ║ ✅ DS18B20 Temp-Sensor (Input-only, 4.7kΩ Pull-up zu 3.3V)                                            ║
+║  GPIO35   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
 ║  GPIO36   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter) (Input-only)               ║
 ║  GPIO39   ║ IRQ Input    ║ ✅ MCP23017 INTA/INTB - Schalter/Taster Events (INPUT_PULLUP) (Input-only)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
@@ -258,7 +259,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 ║  GPIO27   ║ ETH_CRS_DV   ║ 🔒 LAN8720 PHY - Carrier Sense                                                                         ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║           ║              ║                      ⚠️  BOOT-KRITISCHE GPIO (Vorsicht bei Verwendung!)                               ║
-╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+╠═══════════╬══════════/PWM║ ⚠️  AC Dimmer YYAC-3S - darf keinen Pull-up beim Programmieren haben!═════════════════════════════════╣
 ║  GPIO02   ║ Boot Mode    ║ ⚠️  Darf keinen externen Pull-up beim Programmieren haben - RESERVE                                   ║
 ║  GPIO12   ║ Boot Fail    ║ ⚠️  KRITISCH! Boot fail wenn HIGH beim Start - NIEMALS Pull-up verwenden! - RESERVE                   ║
 ║  GPIO14   ║ MTDO/PWM     ║ ⚠️  LED Dimmer HW-517 (GPIO14 = MTDO, kann beim Boot Debug-Output ausgeben)                         ║
