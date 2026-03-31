@@ -903,9 +903,6 @@ String getHTMLFooter() {
 void handleHome() {
   String html = getHTMLHeader("home");
   
-  // Netzwerk Status
-  html += getNetworkStatus();
-  
   // LED Dimmer
   html += "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>";
   int brightnessPercent = (ledDimmerBrightness * 100) / 255;
