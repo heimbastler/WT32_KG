@@ -759,38 +759,54 @@ String getHTMLHeader(String activeTab) {
   html += "<title>WT32-KG Controller</title>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   html += "<style>";
-  html += "body{font-family:Arial;margin:0;padding:0;background:#f5f5f5;font-size:14px;}";
-  html += ".container{max-width:600px;margin:0 auto;background:white;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.1);overflow:hidden;}";
-  html += "h2{color:#333;text-align:center;padding:15px 10px 10px 10px;font-size:18px;margin:0;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;}";
-  html += "h3{color:#555;margin:15px 10px 8px 10px;border-left:3px solid #2196F3;padding-left:10px;font-size:16px;}";
+  // Tasmota Dark Mode Style
+  html += "body{font-family:Verdana,Arial,sans-serif;margin:0;padding:0;background:#1a1a1a;color:#eee;font-size:12px;}";
+  html += ".container{max-width:600px;margin:0 auto;background:#252525;overflow:hidden;}";
+  html += "h2{color:#eee;text-align:center;padding:12px 10px;font-size:16px;margin:0;background:#1fa3ec;font-weight:normal;}";
+  html += "h3{color:#eee;margin:12px 8px 8px 8px;border-left:2px solid #1fa3ec;padding-left:8px;font-size:14px;font-weight:normal;}";
   
-  // Tab-Navigation
-  html += ".tabs{display:flex;background:#e0e0e0;margin:0;padding:0;list-style:none;border-bottom:2px solid #4CAF50;}";
-  html += ".tab{flex:1;text-align:center;padding:12px 5px;cursor:pointer;background:#e0e0e0;border:none;font-size:13px;font-weight:bold;color:#555;text-decoration:none;display:block;transition:all 0.3s;}";
-  html += ".tab:hover{background:#d0d0d0;}";
-  html += ".tab.active{background:#4CAF50;color:white;border-bottom:3px solid #2e7d32;}";
+  // Tab-Navigation (Tasmota-Style)
+  html += ".tabs{display:flex;background:#1a1a1a;margin:0;padding:0;list-style:none;border-bottom:1px solid #333;}";
+  html += ".tab{flex:1;text-align:center;padding:10px 5px;cursor:pointer;background:#1a1a1a;border:none;font-size:12px;color:#aaa;text-decoration:none;display:block;transition:background 0.2s;}";
+  html += ".tab:hover{background:#333;}";
+  html += ".tab.active{background:#1fa3ec;color:#fff;}";
   
   // Content Area
-  html += ".content{padding:10px;}";
+  html += ".content{padding:8px;}";
   
-  // Button Styles
-  html += ".btn{padding:8px 12px;margin:3px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold;transition:all 0.2s;min-width:120px;display:inline-block;text-align:center;text-decoration:none;}";
-  html += ".btn:active{transform:scale(0.95);}";
-  html += ".btn-on{background:#4CAF50;color:white;}";
-  html += ".btn-off{background:#f44336;color:white;}";
-  html += ".btn-rollo{background:#FF9800;color:white;min-width:70px;margin:2px;padding:8px 10px;}";
-  html += ".btn-neutral{background:#607D8B;color:white;}";
+  // Button Styles (Tasmota-ähnlich)
+  html += ".btn{padding:6px 10px;margin:2px;border:1px solid #333;border-radius:3px;cursor:pointer;font-size:12px;transition:all 0.2s;min-width:100px;display:inline-block;text-align:center;text-decoration:none;background:#444;color:#eee;}";
+  html += ".btn:hover{background:#555;}";
+  html += ".btn:active{transform:scale(0.98);}";
+  html += ".btn-on{background:#47c266;color:#fff;border-color:#47c266;}";
+  html += ".btn-on:hover{background:#5cd67a;}";
+  html += ".btn-off{background:#d43535;color:#fff;border-color:#d43535;}";
+  html += ".btn-off:hover{background:#e84848;}";
+  html += ".btn-rollo{background:#ff9800;color:#fff;border-color:#ff9800;min-width:70px;margin:2px;padding:6px 8px;}";
+  html += ".btn-rollo:hover{background:#ffaa33;}";
+  html += ".btn-neutral{background:#607D8B;color:#fff;border-color:#607D8B;}";
+  html += ".btn-neutral:hover{background:#738fa0;}";
   
   // Layout Styles
-  html += ".grid{display:grid;grid-template-columns:1fr;gap:10px;margin:10px 0;}";
-  html += ".card{background:#fafafa;padding:10px;border-radius:6px;border:1px solid #ddd;margin:10px 0;}";
-  html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:8px 0;}";
-  html += ".rollo-label{min-width:100px;font-weight:bold;font-size:13px;}";
+  html += ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}";
+  html += ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}";
+  html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}";
+  html += ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}";
   
   // Table Styles
-  html += "table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px;}";
-  html += "td,th{border:1px solid #ddd;padding:5px;text-align:center;}";
-  html += "th{background:#f0f0f0;font-weight:bold;}";
+  html += "table{border-collapse:collapse;width:100%;margin:8px 0;font-size:11px;}";
+  html += "td,th{border:1px solid #333;padding:4px;text-align:center;}";
+  html += "th{background:#1a1a1a;font-weight:bold;color:#999;}";
+  html += "td{background:#2a2a2a;}";
+  
+  // Input Range Slider
+  html += "input[type='range']{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;background:#444;outline:none;margin:10px 0;}";
+  html += "input[type='range']::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;}";
+  html += "input[type='range']::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;border:none;}";
+  
+  // Labels
+  html += "label{color:#aaa;font-size:12px;}";
+  html += "label b{color:#eee;}";
   html += "</style>";
   
   // JavaScript für AJAX-Requests ohne Seiten-Reload
