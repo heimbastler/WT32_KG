@@ -534,6 +534,7 @@ void setup() {
   // Schritt 3: Sicherheits-Check - nochmals explizit LOW
   delay(10);
   pcaRel1.digitalWrite(6, LOW);  // R06 - KG Flurlampe
+  pcaRel1.digitalWrite(7, LOW);  // R07 - Küchenarbeitslampe
   pcaRel2.digitalWrite(1, LOW);  // R09 - EG Flurlampe
   Serial.println("✅ Alle Relais initialisiert (R06 & R09 explizit AUS)");
 
@@ -1309,42 +1310,42 @@ void toggleKuechenarbeitslampe() {
   // TouchBoard2: case 3: unten links
   int idx = 7;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(0, relayState[idx] ? HIGH : LOW);
+  pcaRel1.digitalWrite(7, relayState[idx] ? HIGH : LOW);  // Board 1, Pin 7
 }
 void toggleKuechenlampe() {
   // R08 (idx 8)
   // TouchBoard2: case 2: 3te links
   int idx = 8;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(1, relayState[idx] ? HIGH : LOW);
+  pcaRel2.digitalWrite(0, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 0
 }
 void toggleEGFlurlampe() {
   // R09 (idx 9)
   // TouchBoard2: case 0: 3te rechts
   int idx = 9;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(2, relayState[idx] ? HIGH : LOW);
+  pcaRel2.digitalWrite(1, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 1
 }
 void toggleTraegerlampen() {
   // R10 (idx 10)
   // TouchBoard2: case 1: unten rechts
   int idx = 10;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(3, relayState[idx] ? HIGH : LOW);
+  pcaRel2.digitalWrite(2, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 2
 }
 void toggleWohnzimmerlampe1() {
   // R11 (idx 11)
   // TouchBoard1: case 2: oben 1te von links
   int idx = 11;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(4, relayState[idx] ? HIGH : LOW);
+  pcaRel2.digitalWrite(3, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 3
 }
 void toggleWohnzimmerlampe2() {
   // R12 (idx 12)
   // Kein direkter Touch, nur Gruppe
   int idx = 12;
   relayState[idx] = !relayState[idx];
-  pcaRel2.digitalWrite(5, relayState[idx] ? HIGH : LOW);
+  pcaRel2.digitalWrite(4, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 4
 }
 void toggleLamps() {
   // Gruppe: R05, R07, R08, R09, R10, R11, R12 (idx 5,7,8,9,10,11,12)
