@@ -259,6 +259,7 @@ void handleKreuzschaltungKG();
 void handleRoot();
 void handleHome();
 void handleESPNow();
+void handleInfo();
 void handleToggle();
 void handleInputs();
 void handleLEDDimmer();
@@ -597,10 +598,19 @@ void setup() {
   // ESP-NOW Gateway initialisieren
   initESPNowGateway();
 
+  // NTP Zeitserver konfigurieren (Berlin Tempelhof 12101)
+  Serial.println("\n=== NTP Zeitserver Konfiguration ===");
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");  // GMT+0, Server konfigurieren
+  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);  // Berlin: CET (UTC+1) / CEST (UTC+2)
+  tzset();
+  Serial.println("✅ NTP konfiguriert für Berlin (CET/CEST)");
+  Serial.println("=========================================\n");
+
   // Webserver konfigurieren
   server.on("/", handleRoot);
   server.on("/home", handleHome);
   server.on("/espnow", handleESPNow);
+  server.on("/info", handleInfo);
   server.on("/toggle", handleToggle);
   server.on("/inputs", handleInputs);
   server.on("/led", handleLEDDimmer);
@@ -878,6 +888,7 @@ String getHTMLHeader(String activeTab) {
   html += "<div class='tabs'>";
   html += "<a href='/home' class='tab" + String(activeTab == "home" ? " active" : "") + "'>🏠 Home</a>";
   html += "<a href='/espnow' class='tab" + String(activeTab == "espnow" ? " active" : "") + "'>📡 ESP-NOW</a>";
+  html += "<a href='/info' class='tab" + String(activeTab == "info" ? " active" : "") + "'>ℹ️ Info</a>";
   html += "</div>";
   
   html += "<div class='content'>";
@@ -1076,6 +1087,68 @@ void handleHome() {
 }
 
 // ===== ESP-NOW Seite =====
+void handleInfo() {
+  String html = getHTMLHeader("info");
+  
+  // Netzwerk-Informationen
+  html += "<h3>🌐 Netzwerk</h3>";
+  html += "<table>";
+  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
+  
+  if (ETH.linkUp()) {
+    html += "<tr><td>Status</td><td style='color:#47c266;'>✅ Verbunden (Ethernet)</td></tr>";
+    html += "<tr><td>IP-Adresse</td><td>" + ETH.localIP().toString() + "</td></tr>";
+    html += "<tr><td>MAC-Adresse</td><td>" + ETH.macAddress() + "</td></tr>";
+    html += "<tr><td>Hostname</td><td>" + String(HOSTNAME) + "</td></tr>";
+    html += "<tr><td>Link Speed</td><td>" + String(ETH.linkSpeed()) + " Mbps</td></tr>";
+    html += "<tr><td>Full Duplex</td><td>" + String(ETH.fullDuplex() ? "Ja" : "Nein") + "</td></tr>";
+  } else {
+    html += "<tr><td>Status</td><td style='color:#d43535;'>❌ Nicht verbunden</td></tr>";
+  }
+  
+  // WiFi MAC für ESP-NOW
+  html += "<tr><td>WiFi MAC (ESP-NOW)</td><td>" + WiFi.macAddress() + "</td></tr>";
+  html += "</table>";
+  
+  // NTP Zeit
+  html += "<h3>🕐 Zeit (NTP)</h3>";
+  html += "<table>";
+  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
+  
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    char timeStr[64];
+    char dateStr[64];
+    strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+    strftime(dateStr, sizeof(dateStr), "%d.%m.%Y", &timeinfo);
+    
+    html += "<tr><td>Datum</td><td>" + String(dateStr) + "</td></tr>";
+    html += "<tr><td>Uhrzeit</td><td style='font-size:16px;font-weight:bold;color:#1fa3ec;'>" + String(timeStr) + "</td></tr>";
+    html += "<tr><td>Zeitzone</td><td>Berlin (CET/CEST)</td></tr>";
+    html += "<tr><td>PLZ</td><td>12101 Tempelhof</td></tr>";
+  } else {
+    html += "<tr><td colspan='2' style='color:#ff9800;'>⏳ Warte auf NTP-Synchronisation...</td></tr>";
+  }
+  
+  html += "</table>";
+  
+  // System-Informationen
+  html += "<h3>💾 System</h3>";
+  html += "<table>";
+  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
+  html += "<tr><td>Chip Modell</td><td>ESP32 WT32-ETH01</td></tr>";
+  html += "<tr><td>Uptime</td><td>" + String(millis() / 1000) + " Sekunden</td></tr>";
+  html += "<tr><td>Freier Heap</td><td>" + String(ESP.getFreeHeap() / 1024.0, 2) + " KB</td></tr>";
+  html += "<tr><td>Firmware</td><td>WT32-KG Controller v1.0</td></tr>";
+  html += "</table>";
+  
+  // Auto-Refresh alle 1 Sekunde für Uhrzeit
+  html += "<script>setTimeout(function(){location.reload();},1000);</script>";
+  
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
 void handleESPNow() {
   String html = getHTMLHeader("espnow");
   
