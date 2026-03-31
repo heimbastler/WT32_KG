@@ -516,6 +516,11 @@ void setup() {
   kreuzstateEG = inputState[KREUZ_EG1] | (inputState[KREUZ_EG2] << 1);
   kreuzstateKG = inputState[KREUZ_KG1] | (inputState[KREUZ_KG2] << 1) | (inputState[KREUZ_KG3] << 2);
   Serial.printf("✅ Kreuzschaltungen initialisiert: EG=0x%02X, KG=0x%02X\n", kreuzstateEG, kreuzstateKG);
+  
+  // KRITISCH: IR-Switch Zustände synchronisieren (verhindert Boot-Toggle)
+  lastIRSwitchLeft = inputState[IR_SWITCH_KITCHEN_LEFT];
+  lastIRSwitchRight = inputState[IR_SWITCH_KITCHEN_RIGHT];
+  Serial.printf("✅ IR-Switches initialisiert: Left=%d, Right=%d\n", lastIRSwitchLeft, lastIRSwitchRight);
   Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
