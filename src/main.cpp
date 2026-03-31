@@ -503,6 +503,19 @@ void setup() {
   uint16_t initialRead = mcpIn.readGPIOAB();
   Serial.print("📊 Initial GPIO Reading: 0x");
   Serial.println(initialRead, HEX);
+  
+  // KRITISCH: inputState[] mit echten Werten füllen
+  uint8_t portA = initialRead & 0xFF;
+  uint8_t portB = (initialRead >> 8) & 0xFF;
+  for (int i = 0; i < 8; i++) {
+    inputState[i] = (portA >> i) & 1;
+    inputState[i + 8] = (portB >> i) & 1;
+  }
+  
+  // KRITISCH: Kreuzschaltungs-Zustände synchronisieren BEVOR Handler laufen
+  kreuzstateEG = inputState[KREUZ_EG1] | (inputState[KREUZ_EG2] << 1);
+  kreuzstateKG = inputState[KREUZ_KG1] | (inputState[KREUZ_KG2] << 1) | (inputState[KREUZ_KG3] << 2);
+  Serial.printf("✅ Kreuzschaltungen initialisiert: EG=0x%02X, KG=0x%02X\n", kreuzstateEG, kreuzstateKG);
   Serial.println("=========================================\n");
 
   // Relais als OUTPUT und alle AUS (LOW für nicht-invertierte Relais)
