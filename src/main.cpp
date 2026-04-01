@@ -207,7 +207,7 @@ const char* relayNames[24] = {
   "Kuechenlampe",           // R08, idx 8, TouchBoard2: case 2: 3te links
   "EG Flurlampe",           // R09, idx 9, TouchBoard2: case 0: 3te rechts
   "Traegerlampen",          // R10, idx 10, TouchBoard2: case 1: unten rechts
-  "Kronleuchter",           // R11, idx 11, TouchBoard1: case 2: AC Dimmer über GPIO4
+  "Kronleuchter Relais",    // R11, idx 11, TouchBoard1: case 2: Nur Relais (AC Dimmer ist separat auf GPIO2)
   "Reserve Wohnzimmer",     // R12, idx 12, TouchBoard1: kein direkter Touch, Reserve
   "Relais 13",              // R13, idx 13
   "Relais 14",              // R14, idx 14
@@ -926,8 +926,10 @@ void handleHome() {
   html += "}";
   html += "</script>";
   
-  // AC Dimmer Kronleuchter
-  html += "<h3>💡 AC Dimmer Kronleuchter (GPIO4 - YYAC-3S)</h3>";
+  // AC Dimmer (unabhängig von R11)
+  html += "<h3>💡 AC Dimmer (GPIO2 - YYAC-3S)</h3>";
+  html += "<div class='card'>";
+  html += "<p style='font-size:11px;color:#aaa;margin:0 0 10px 0;'>⚠️ Unabhängig von R11 (Kronleuchter Relais). Dimmer steuert nur PWM.</p>";
   int acPercent = (acDimmerBrightness * 100) / 255;
   html += "<div style='margin:20px 0;'>";
   html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(acPercent) + "%</b></label><br>";
@@ -936,6 +938,7 @@ void handleHome() {
   html += "<span style='font-size:12px;'>0%</span>";
   html += "<span style='float:right;font-size:12px;'>100%</span>";
   html += "</div>";
+  html += "</div>";  // Close card
   
   html += "<script>";
   html += "function updateKronleuchter(value) {";
@@ -1022,13 +1025,10 @@ void handleHome() {
   String traegerClass = relayState[10] ? "btn-on" : "btn-off";
   html += "<button onclick='toggleRelay(10,this)' class='btn " + traegerClass + "'>💡 Traegerlampen (R10)</button><br>";
   
-  // R11 - Kronleuchter (mit Dimmerfunktion)
+  // R11 - Kronleuchter Relais (nur Ein/Aus, AC Dimmer ist separat)
   String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
-  acPercent = (acDimmerBrightness * 100) / 255;  // Variable wurde bereits weiter oben deklariert
-  html += "<button onclick='toggleRelay(11,this)' class='btn " + kronleuchterClass + "'>💡 Kronleuchter (R11)";
-  if (relayState[11]) {
-    html += " (" + String(acPercent) + "%)";  
-  }
+  html += "<button onclick='toggleRelay(11,this)' class='btn " + kronleuchterClass + "'>⚡ Kronleuchter Relais (R11): ";
+  html += relayState[11] ? "EIN" : "AUS";
   html += "</button><br>";
   
   // R12 - Reserve Wohnzimmer
@@ -1235,9 +1235,6 @@ void handleToggle() {
     toggleTuerrolloUp();
   } else if (idx == 3) {
     toggleTuerrolloDown();
-  } else if (idx == 11) {
-    // Spezielle Behandlung für Kronleuchter (AC Dimmer)
-    toggleKronleuchter();
   } else if (idx < 24) {
     // Standard Toggle für alle anderen Relais (nicht-invertiert: LOW=AUS, HIGH=EIN)
     relayState[idx] = !relayState[idx];
@@ -1482,15 +1479,7 @@ void handleACDimmer() {
       // Umrechnung von Prozent (0-100) zu PWM-Wert (0-255)
       uint8_t pwmValue = (brightness * 255) / 100;
       setACDimmerBrightness(pwmValue);
-      
-      // Auch das Relais entsprechend schalten
-      if (brightness > 0) {
-        relayState[11] = 1; // R11 = Kronleuchter EIN
-        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
-      } else {
-        relayState[11] = 0; // R11 = Kronleuchter AUS
-        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
-      }
+      // R11 ist jetzt unabhängig vom AC Dimmer - Relais muss separat geschaltet werden
     }
   }
   server.sendHeader("Location", "/");
@@ -1498,16 +1487,13 @@ void handleACDimmer() {
 }
 
 void toggleKronleuchter() {
-  // Kronleuchter toggle: AUS → 50% → AUS
+  // AC Dimmer toggle: AUS → 50% → AUS (ohne R11 Relais)
   if (acDimmerBrightness == 0) {
     setACDimmerBrightness(127); // 50% Helligkeit
-    relayState[11] = 1; // R11 EIN
-    pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
   } else {
     setACDimmerBrightness(0); // AUS
-    relayState[11] = 0; // R11 AUS
-    pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
   }
+  Serial.println("AC Dimmer toggle (R11 Relais ist jetzt unabhängig)");
 }
 
 void dimKronleuchter(bool dimUp) {
@@ -1517,10 +1503,6 @@ void dimKronleuchter(bool dimUp) {
     // Heller dimmen
     if (acDimmerBrightness < 240) {
       setACDimmerBrightness(acDimmerBrightness + dimStep);
-      if (acDimmerBrightness > 0) {
-        relayState[11] = 1; // R11 EIN wenn > 0
-        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
-      }
     }
   } else {
     // Dunkler dimmen
@@ -1528,10 +1510,9 @@ void dimKronleuchter(bool dimUp) {
       setACDimmerBrightness(acDimmerBrightness - dimStep);
     } else {
       setACDimmerBrightness(0); // Komplett aus
-      relayState[11] = 0; // R11 AUS
-      pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
     }
   }
+  // R11 Relais ist jetzt unabhängig vom AC Dimmer
 }
 
 // ======================================================
