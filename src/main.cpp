@@ -742,7 +742,7 @@ void loop() {
     tuerrolloTimer = 0;
   }
 
-  delay(50);
+  delay(10);  // Reduziert von 50ms → schnellere Reaktionszeit
 }
 
 // ======================================================
@@ -815,23 +815,29 @@ String getHTMLHeader(String activeTab) {
   html += "<script>";
   html += "function toggleRelay(r,btnElement){";
   html += "console.log('Toggle relay '+r);";
+  // OPTIMISTIC UI: Button sofort umschalten für schnelles Feedback
+  html += "var btn=btnElement;";
+  html += "var wasOn=btn.classList.contains('btn-on')||btn.classList.contains('btn-neutral');";
+  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
+  // Sofort neuen Zustand anzeigen (optimistic)
+  html += "if(wasOn){";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}";
+  html += "}else{";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}";
+  html += "}";
+  // Server-Request im Hintergrund
   html += "fetch('/toggle?r='+r).then(function(response){";
-  html += "console.log('Response received');";
   html += "return response.json();";
   html += "}).then(function(data){";
-  html += "console.log('Data:',data);";
-  // Button finden und Status aktualisieren basierend auf Server-Response
-  html += "var btn=btnElement;";
+  html += "console.log('Server confirmed state:'+data.state);";
+  // Server-Status mit UI abgleichen (falls abweichend korrigieren)
   html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  html += "console.log('State:'+data.state);";
   html += "if(data.state==1){";
-  html += "console.log('Setting ON');";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}";  // Rollos: aktiv = neutral
-  html += "else{btn.classList.add('btn-on');}";  // Lampen: an = grün
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}";
+  html += "else{btn.classList.add('btn-on');}";
   html += "}else{";
-  html += "console.log('Setting OFF');";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}";  // Rollos: inaktiv = orange
-  html += "else{btn.classList.add('btn-off');}";  // Lampen: aus = rot
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}";
+  html += "else{btn.classList.add('btn-off');}";
   html += "}";
   // Button-Text für Rollos updaten
   html += "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
@@ -848,7 +854,14 @@ String getHTMLHeader(String activeTab) {
   html += "}";
   html += "}";
   html += "}).catch(function(error){";
-  html += "console.error('Error:',error);";
+  html += "console.error('Toggle error:',error);";
+  // Bei Fehler Button zurückschalten
+  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
+  html += "if(wasOn){";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}";
+  html += "}else{";
+  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}";
+  html += "}";
   html += "});";
   html += "}";
   // JavaScript für Auto-Refresh der Eingangszustände
