@@ -277,7 +277,7 @@ const unsigned long rolloActiveTime = 60000; // ms, wie lange das Relais anzieht
 
 // --- Zeitsteuerung für Temperaturmessung ---
 unsigned long lastTempUpdate = 0;
-const unsigned long tempUpdateInterval = 10000; // 10 Sekunden (nicht zu schnell, aber regelmäßig)
+const unsigned long tempUpdateInterval = 30000; // 30 Sekunden (schont den µC)
 
 // --- Zeitsteuerung für I2C Lese-Operationen (Throttling) ---
 unsigned long lastI2CRead = 0;
@@ -597,14 +597,6 @@ void setup() {
 
   // ESP-NOW Gateway initialisieren
   initESPNowGateway();
-
-  // NTP Zeitserver konfigurieren (Berlin Tempelhof 12101)
-  Serial.println("\n=== NTP Zeitserver Konfiguration ===");
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");  // GMT+0, Server konfigurieren
-  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);  // Berlin: CET (UTC+1) / CEST (UTC+2)
-  tzset();
-  Serial.println("✅ NTP konfiguriert für Berlin (CET/CEST)");
-  Serial.println("=========================================\n");
 
   // Webserver konfigurieren
   server.on("/", handleRoot);
@@ -1107,28 +1099,6 @@ void handleInfo() {
   html += "<tr><td>WiFi MAC (ESP-NOW)</td><td>" + WiFi.macAddress() + "</td></tr>";
   html += "</table>";
   
-  // NTP Zeit
-  html += "<h3>🕐 Zeit (NTP)</h3>";
-  html += "<table>";
-  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
-  
-  struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-    char timeStr[64];
-    char dateStr[64];
-    strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-    strftime(dateStr, sizeof(dateStr), "%d.%m.%Y", &timeinfo);
-    
-    html += "<tr><td>Datum</td><td>" + String(dateStr) + "</td></tr>";
-    html += "<tr><td>Uhrzeit</td><td style='font-size:16px;font-weight:bold;color:#1fa3ec;'>" + String(timeStr) + "</td></tr>";
-    html += "<tr><td>Zeitzone</td><td>Berlin (CET/CEST)</td></tr>";
-    html += "<tr><td>PLZ</td><td>12101 Tempelhof</td></tr>";
-  } else {
-    html += "<tr><td colspan='2' style='color:#ff9800;'>⏳ Warte auf NTP-Synchronisation...</td></tr>";
-  }
-  
-  html += "</table>";
-  
   // System-Informationen
   html += "<h3>💾 System</h3>";
   html += "<table>";
@@ -1138,9 +1108,6 @@ void handleInfo() {
   html += "<tr><td>Freier Heap</td><td>" + String(ESP.getFreeHeap() / 1024.0, 2) + " KB</td></tr>";
   html += "<tr><td>Firmware</td><td>WT32-KG Controller v1.0</td></tr>";
   html += "</table>";
-  
-  // Auto-Refresh alle 1 Sekunde für Uhrzeit
-  html += "<script>setTimeout(function(){location.reload();},1000);</script>";
   
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
@@ -1611,8 +1578,9 @@ void updateTemperatures() {
   
   // Temperaturkonversion starten
   temperaturSensoren.requestTemperatures();
-  // ⏱️ WICHTIG: 10-bit Genauigkeit braucht ~188ms für Konversion
-  delay(200);
+  // ⏱️ WICHTIG: 9-bit Genauigkeit braucht ~94ms für Konversion
+  // Blockierendes delay - könnte später durch non-blocking ersetzt werden
+  delay(100);
   
   float temp = temperaturSensoren.getTempCByIndex(0);
   
