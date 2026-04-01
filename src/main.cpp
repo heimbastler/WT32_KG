@@ -1486,10 +1486,10 @@ void handleACDimmer() {
       // Auch das Relais entsprechend schalten
       if (brightness > 0) {
         relayState[11] = 1; // R11 = Kronleuchter EIN
-        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
       } else {
         relayState[11] = 0; // R11 = Kronleuchter AUS
-        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
       }
     }
   }
@@ -1502,11 +1502,11 @@ void toggleKronleuchter() {
   if (acDimmerBrightness == 0) {
     setACDimmerBrightness(127); // 50% Helligkeit
     relayState[11] = 1; // R11 EIN
-    pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+    pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
   } else {
     setACDimmerBrightness(0); // AUS
     relayState[11] = 0; // R11 AUS
-    pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+    pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
   }
 }
 
@@ -1519,7 +1519,7 @@ void dimKronleuchter(bool dimUp) {
       setACDimmerBrightness(acDimmerBrightness + dimStep);
       if (acDimmerBrightness > 0) {
         relayState[11] = 1; // R11 EIN wenn > 0
-        pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
+        pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
       }
     }
   } else {
@@ -1529,7 +1529,7 @@ void dimKronleuchter(bool dimUp) {
     } else {
       setACDimmerBrightness(0); // Komplett aus
       relayState[11] = 0; // R11 AUS
-      pcaRel2.digitalWrite(3, HIGH); // Board B, Pin 3 (R11 = 8+3)
+      pcaRel2.digitalWrite(3, LOW); // Board B, Pin 3 (R11 = 8+3)
     }
   }
 }
