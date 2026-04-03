@@ -777,14 +777,14 @@ String getHTMLHeader(String activeTab) {
   html += ".content{padding:8px;}";
   
   // Button Styles (Tasmota-ähnlich)
-  html += ".btn{padding:6px 10px;margin:2px;border:1px solid #333;border-radius:3px;cursor:pointer;font-size:12px;transition:all 0.2s;min-width:100px;display:inline-block;text-align:center;text-decoration:none;background:#444;color:#eee;}";
+  html += ".btn{padding:6px 10px;margin:2px;border:1px solid #333;border-radius:3px;cursor:pointer;font-size:12px;transition:all 0.2s;min-width:200px;display:inline-block;text-align:center;text-decoration:none;background:#444;color:#eee;}";
   html += ".btn:hover{background:#555;}";
   html += ".btn:active{transform:scale(0.98);}";
   html += ".btn-on{background:#47c266;color:#fff;border-color:#47c266;}";
   html += ".btn-on:hover{background:#5cd67a;}";
   html += ".btn-off{background:#d43535;color:#fff;border-color:#d43535;}";
   html += ".btn-off:hover{background:#e84848;}";
-  html += ".btn-rollo{background:#ff9800;color:#fff;border-color:#ff9800;min-width:70px;margin:2px;padding:6px 8px;}";
+  html += ".btn-rollo{background:#ff9800;color:#fff;border-color:#ff9800;}";
   html += ".btn-rollo:hover{background:#ffaa33;}";
   html += ".btn-neutral{background:#607D8B;color:#fff;border-color:#607D8B;}";
   html += ".btn-neutral:hover{background:#738fa0;}";
@@ -794,6 +794,7 @@ String getHTMLHeader(String activeTab) {
   html += ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}";
   html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}";
   html += ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}";
+  html += ".rollo-status{margin-left:10px;color:#666;font-size:12px;}";
   
   // Table Styles
   html += "table{border-collapse:collapse;width:100%;margin:8px 0;font-size:11px;}";
@@ -873,6 +874,23 @@ String getHTMLHeader(String activeTab) {
   html += "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
   html += "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▲ Hoch';}";
   html += "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "}";
+  html += "}";
+  // Rollo-Status-Anzeige updaten
+  html += "if(r==0||r==1){";
+  html += "var statusSpan=document.getElementById('fenster-status');";
+  html += "if(statusSpan){";
+  html += "if(data.state==1&&r==0){statusSpan.textContent=' (Fährt hoch)';}";
+  html += "else if(data.state==1&&r==1){statusSpan.textContent=' (Fährt runter)';}";
+  html += "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}";
+  html += "}";
+  html += "}";
+  html += "if(r==2||r==3){";
+  html += "var statusSpan=document.getElementById('tuer-status');";
+  html += "if(statusSpan){";
+  html += "if(data.state==1&&r==2){statusSpan.textContent=' (Fährt hoch)';}";
+  html += "else if(data.state==1&&r==3){statusSpan.textContent=' (Fährt runter)';}";
+  html += "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}";
   html += "}";
   html += "}";
   // Button-Text für normale Relais updaten (4-23)
@@ -999,7 +1017,7 @@ void handleHome() {
   if (relayState[0] == 1) fensterStatus = " (Fährt hoch)";
   else if (relayState[1] == 1) fensterStatus = " (Fährt runter)";
   else fensterStatus = " (Stopp)";
-  html += "<span style='margin-left:10px;color:#666;'>" + fensterStatus + "</span>";
+  html += "<span class='rollo-status' id='fenster-status'>" + fensterStatus + "</span>";
   html += "</div>";
   
   // Türrollo  
@@ -1019,7 +1037,7 @@ void handleHome() {
   if (relayState[2] == 1) tuerStatus = " (Fährt hoch)";
   else if (relayState[3] == 1) tuerStatus = " (Fährt runter)";
   else tuerStatus = " (Stopp)";
-  html += "<span style='margin-left:10px;color:#666;'>" + tuerStatus + "</span>";
+  html += "<span class='rollo-status' id='tuer-status'>" + tuerStatus + "</span>";
   html += "</div>";
   
   html += "</div>";
