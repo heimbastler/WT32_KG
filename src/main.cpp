@@ -825,6 +825,24 @@ String getHTMLHeader(String activeTab) {
   html += "}else{";
   html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}";
   html += "}";
+  // Rollo-Pair optimistisch updaten (z.B. bei R0->R1 oder R2->R3)
+  html += "if(r>=0&&r<=3){";
+  html += "var pairIdx=(r==0)?1:(r==1)?0:(r==2)?3:2;";
+  html += "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+pairIdx+',this)\"]');";
+  html += "if(pairBtn&&!wasOn){";  // Nur wenn wir gerade starten (nicht stoppen)
+  html += "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
+  html += "pairBtn.classList.add('btn-rollo');";
+  html += "if(pairIdx==0){pairBtn.textContent='▲ Hoch';}";
+  html += "if(pairIdx==1){pairBtn.textContent='▼ Runter';}";
+  html += "if(pairIdx==2){pairBtn.textContent='▲ Hoch';}";
+  html += "if(pairIdx==3){pairBtn.textContent='▼ Runter';}";
+  html += "}";
+  html += "}";
+  // Button-Text optimistisch updaten
+  html += "if(r==0){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}";
+  html += "if(r==1){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}";
+  html += "if(r==2){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}";
+  html += "if(r==3){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}";
   // Server-Request im Hintergrund
   html += "fetch('/toggle?r='+r).then(function(response){";
   html += "return response.json();";
@@ -844,6 +862,19 @@ String getHTMLHeader(String activeTab) {
   html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
   html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
   html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
+  // Rollo-Pair: Anderen Button auch updaten (z.B. bei Fensterrollo R00<->R01)
+  html += "if(data.pair!==undefined){";
+  html += "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+data.pair+',this)\"]');";
+  html += "if(pairBtn){";
+  html += "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
+  html += "if(data.pairState==1){pairBtn.classList.add('btn-neutral');}";
+  html += "else{pairBtn.classList.add('btn-rollo');}";
+  html += "if(data.pair==0){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▲ Hoch';}";
+  html += "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▲ Hoch';}";
+  html += "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "}";
+  html += "}";
   // Button-Text für normale Relais updaten (4-23)
   html += "if(r>=4){";
   html += "var text=btn.textContent;";
@@ -1265,8 +1296,20 @@ void handleToggle() {
   }
   
   // AJAX-Support: JSON mit aktuellem Status zurückgeben
-  // Browser kann Button-Status dynamisch updaten ohne Seiten-Reload
-  String response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + "}";
+  // Bei Rollos (0-3) beide Stati zurückgeben, da sie sich gegenseitig beeinflussen
+  String response;
+  if (idx == 0 || idx == 1) {
+    // Fensterrollo: beide Stati (R00 und R01) zurückgeben
+    response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + 
+               ",\"pair\":" + String(idx == 0 ? 1 : 0) + ",\"pairState\":" + String(relayState[idx == 0 ? 1 : 0]) + "}";
+  } else if (idx == 2 || idx == 3) {
+    // Türrollo: beide Stati (R02 und R03) zurückgeben
+    response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + 
+               ",\"pair\":" + String(idx == 2 ? 3 : 2) + ",\"pairState\":" + String(relayState[idx == 2 ? 3 : 2]) + "}";
+  } else {
+    // Normale Relais: nur eigener Status
+    response = "{\"relay\":" + String(idx) + ",\"state\":" + String(relayState[idx]) + "}";
+  }
   server.send(200, "application/json", response);
 }
 
