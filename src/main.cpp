@@ -791,6 +791,7 @@ String getHTMLHeader(String activeTab) {
   
   // Layout Styles
   html += ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}";
+  html += ".btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}";
   html += ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}";
   html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}";
   html += ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}";
@@ -1042,73 +1043,35 @@ void handleHome() {
   
   html += "</div>";
 
-  // Lampen - alle zusammengefasst und nach Relaisnummer sortiert
-  html += "<h3>💡 Lampen</h3>";
+  // Lampen & Relais - alle R04-R23 in 2-spaltigem Grid
+  html += "<h3>💡 Lampen & Relais</h3>";
   html += "<div class='card'>";
+  html += "<div class='btn-grid'>";
   
-  // R04 - Aussenlampe Garten
-  String aussenGartenClass = relayState[4] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(4,this)' class='btn " + aussenGartenClass + "'>💡 Aussenlampe Garten (R04)</button><br>";
-  
-  // R05 - Steinlampe
-  String steinlampeClass = relayState[5] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(5,this)' class='btn " + steinlampeClass + "'>💡 Steinlampe (R05)</button><br>";
-  
-  // R06 - KG Flurlampe
-  String kgFlurClass = relayState[6] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(6,this)' class='btn " + kgFlurClass + "'>💡 KG Flurlampe (R06)</button><br>";
-  
-  // R07 - Kuechenarbeitslampe
-  String kuechenArbeitClass = relayState[7] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(7,this)' class='btn " + kuechenArbeitClass + "'>💡 Kuechenarbeitslampe (R07)</button><br>";
-  
-  // R08 - Kuechenlampe
-  String kuechenClass = relayState[8] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(8,this)' class='btn " + kuechenClass + "'>💡 Kuechenlampe (R08)</button><br>";
-  
-  // R09 - EG Flurlampe
-  String egFlurClass = relayState[9] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(9,this)' class='btn " + egFlurClass + "'>💡 EG Flurlampe (R09)</button><br>";
-  
-  // R10 - Traegerlampen
-  String traegerClass = relayState[10] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(10,this)' class='btn " + traegerClass + "'>💡 Traegerlampen (R10)</button><br>";
-  
-  // R11 - Kronleuchter Relais (nur Ein/Aus, AC Dimmer ist separat)
-  String kronleuchterClass = relayState[11] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(11,this)' class='btn " + kronleuchterClass + "'>⚡ Kronleuchter Relais (R11): ";
-  html += relayState[11] ? "EIN" : "AUS";
-  html += "</button><br>";
-  
-  // R12 - Reserve Wohnzimmer
-  String wohnzimmer2Class = relayState[12] ? "btn-on" : "btn-off";
-  html += "<button onclick='toggleRelay(12,this)' class='btn " + wohnzimmer2Class + "'>💡 Reserve Wohnzimmer (R12)</button>";
-  html += "</div>";
-  
-  html += "</div>";
-
-  // Freie Relais
-  html += "<h3>⚙️ Freie Relais & Sonstiges</h3>";
-  html += "<div class='card'>";
-  
-  // Freie Relais 13-23
-  for (int i = 13; i < 15; i++) {
+  // R04-R23 alle in einer Schleife
+  for (int i = 4; i < 24; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
-    String relaisStatus = relayState[i] ? "EIN" : "AUS";
     String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
-    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + " (" + relaisNum + "): " + relaisStatus + "</button><br>";
+    String icon = "💡";
+    String relaisStatus = "";
+    
+    // R11 Kronleuchter hat spezielles Format mit EIN/AUS
+    if (i == 11) {
+      icon = "⚡";
+      relaisStatus = relayState[i] ? ": EIN" : ": AUS";
+      html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+    } else {
+      // Alle anderen Relais
+      if (i >= 13) icon = "🔌"; // Freie Relais bekommen Stecker-Icon
+      relaisStatus = relayState[i] ? ": EIN" : ": AUS";
+      html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+    }
   }
   
-  // Freie Relais 15-23
-  for (int i = 15; i < 24; i++) {
-    String relaisClass = relayState[i] ? "btn-on" : "btn-off";
-    String relaisStatus = relayState[i] ? "EIN" : "AUS";
-    String relaisNum = "R" + String(i);
-    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + " (" + relaisNum + "): " + relaisStatus + "</button>";
-    if (i % 3 == 2) html += "<br>"; // Umbruch nach 3 Buttons
-  }
+  html += "</div>"; // btn-grid
+  html += "</div>"; // card
   
-  html += "</div>";
+  html += "</div>"; // content
 
   // Eingänge
   html += "<h3>📊 Digitale Eingänge</h3>";
