@@ -859,10 +859,10 @@ String getHTMLHeader(String activeTab) {
   html += "else{btn.classList.add('btn-off');}";
   html += "}";
   // Button-Text für Rollos updaten
-  html += "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
-  html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
-  html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp':'▲ Hoch';}";
-  html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}";
+  html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}";
+  html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}";
+  html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}";
   // Rollo-Pair: Anderen Button auch updaten (z.B. bei Fensterrollo R00<->R01)
   html += "if(data.pair!==undefined){";
   html += "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+data.pair+',this)\"]');";
@@ -870,10 +870,10 @@ String getHTMLHeader(String activeTab) {
   html += "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
   html += "if(data.pairState==1){pairBtn.classList.add('btn-neutral');}";
   html += "else{pairBtn.classList.add('btn-rollo');}";
-  html += "if(data.pair==0){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▲ Hoch';}";
-  html += "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
-  html += "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▲ Hoch';}";
-  html += "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp':'▼ Runter';}";
+  html += "if(data.pair==0){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}";
+  html += "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}";
+  html += "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}";
+  html += "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}";
   html += "}";
   html += "}";
   // Rollo-Status-Anzeige updaten
@@ -1005,8 +1005,8 @@ void handleHome() {
   html += "<span class='rollo-label'>Fensterrollo:</span>";
   
   // Dynamische Button-Symbole je nach Status
-  String fensterHochSymbol = (relayState[0] == 1) ? "⏹️ Stopp" : "▲ Hoch";
-  String fensterRunterSymbol = (relayState[1] == 1) ? "⏹️ Stopp" : "▼ Runter";
+  String fensterHochSymbol = (relayState[0] == 1) ? "⏹️ Stopp (R00)" : "▲ Hoch (R00)";
+  String fensterRunterSymbol = (relayState[1] == 1) ? "⏹️ Stopp (R01)" : "▼ Runter (R01)";
   String fensterHochClass = (relayState[0] == 1) ? "btn-neutral" : "btn-rollo";
   String fensterRunterClass = (relayState[1] == 1) ? "btn-neutral" : "btn-rollo";
   
@@ -1025,8 +1025,8 @@ void handleHome() {
   html += "<span class='rollo-label'>Türrollo:</span>";
   
   // Dynamische Button-Symbole je nach Status
-  String tuerHochSymbol = (relayState[2] == 1) ? "⏹️ Stopp" : "▲ Hoch";
-  String tuerRunterSymbol = (relayState[3] == 1) ? "⏹️ Stopp" : "▼ Runter";
+  String tuerHochSymbol = (relayState[2] == 1) ? "⏹️ Stopp (R02)" : "▲ Hoch (R02)";
+  String tuerRunterSymbol = (relayState[3] == 1) ? "⏹️ Stopp (R03)" : "▼ Runter (R03)";
   String tuerHochClass = (relayState[2] == 1) ? "btn-neutral" : "btn-rollo";
   String tuerRunterClass = (relayState[3] == 1) ? "btn-neutral" : "btn-rollo";
   
@@ -1095,14 +1095,16 @@ void handleHome() {
   for (int i = 13; i < 15; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
     String relaisStatus = relayState[i] ? "EIN" : "AUS";
-    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</button><br>";
+    String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
+    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + " (" + relaisNum + "): " + relaisStatus + "</button><br>";
   }
   
   // Freie Relais 15-23
   for (int i = 15; i < 24; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
     String relaisStatus = relayState[i] ? "EIN" : "AUS";
-    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + ": " + relaisStatus + "</button>";
+    String relaisNum = "R" + String(i);
+    html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>🔌 " + String(relayNames[i]) + " (" + relaisNum + "): " + relaisStatus + "</button>";
     if (i % 3 == 2) html += "<br>"; // Umbruch nach 3 Buttons
   }
   
