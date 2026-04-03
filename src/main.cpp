@@ -87,6 +87,7 @@
 #include <WiFi.h>  // WiFi für ESP-NOW benötigt (nicht für STA/AP)
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>  // mDNS für Hostname-Auflösung
+#include <Preferences.h>  // NVRAM Speicher für persistente Daten
 #include <Adafruit_MCP23X17.h> // 16-Bit GPIO Expander für Eingänge
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
@@ -195,7 +196,8 @@ float lastSchaltschrankTemp = -999.0;   // Letzte Temperatur für Änderungserke
 // ---------- Relaisnamen, Index entspricht R00...R23 ----------
 // ACHTUNG: Index 0 = R00, Index 1 = R01, ... Index 22 = R22, Index 23 = R23
 // TouchBoard-Positionen als Kommentar aus old.ccp ergänzt
-const char* relayNames[24] = {
+// Namen sind editierbar über Web UI und werden in Preferences gespeichert
+String relayNames[24] = {
   "Fensterrollo hoch",      // R00, idx 0, TouchBoard1: case 9: Taster für Fensterrollo up
   "Fensterrollo runter",    // R01, idx 1, TouchBoard1: case 10: Taster für Fensterrollo down
   "Tuerrollo hoch",         // R02, idx 2, TouchBoard1: case 6: push button for Türrollo up
@@ -221,6 +223,8 @@ const char* relayNames[24] = {
   "Relais 22",              // R22, idx 22
   "Relais 23"               // R23, idx 23
 };
+
+Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
 
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
@@ -267,6 +271,8 @@ void handleACDimmer();
 void handlePairing();
 void handleClientDetail();
 void handleRemoveClient();
+void handleEdit();
+void handleSaveName();
 
 
 
@@ -296,6 +302,42 @@ void IRAM_ATTR mcpISR() {
 // void IRAM_ATTR mpr121ISR() {
 //   mpr121InterruptFlag = true;  // Flag setzen, Verarbeitung in loop()
 // }
+
+// ======================================================
+// RELAY NAMEN LADEN/SPEICHERN (NVRAM Preferences)
+// ======================================================
+void loadRelayNames() {
+  preferences.begin("relay-names", true); // Read-only Modus
+  
+  for (int i = 0; i < 24; i++) {
+    String key = "R" + String(i);
+    String savedName = preferences.getString(key.c_str(), "");
+    
+    // Nur laden wenn ein Name gespeichert wurde (nicht leer)
+    if (savedName.length() > 0) {
+      relayNames[i] = savedName;
+      Serial.println("✅ Relay " + key + " Name geladen: " + savedName);
+    }
+  }
+  
+  preferences.end();
+  Serial.println("===========================================\n");
+}
+
+void saveRelayName(int relayIndex, String newName) {
+  if (relayIndex < 0 || relayIndex >= 24) {
+    Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
+    return;
+  }
+  
+  preferences.begin("relay-names", false); // Read-Write Modus
+  String key = "R" + String(relayIndex);
+  preferences.putString(key.c_str(), newName);
+  preferences.end();
+  
+  relayNames[relayIndex] = newName;
+  Serial.println("✅ Relay " + key + " Name gespeichert: " + newName);
+}
 
 // ======================================================
 // SETUP
@@ -603,13 +645,20 @@ void setup() {
   server.on("/home", handleHome);
   server.on("/espnow", handleESPNow);
   server.on("/info", handleInfo);
+  server.on("/edit", handleEdit);
   server.on("/toggle", handleToggle);
   server.on("/inputs", handleInputs);
   server.on("/led", handleLEDDimmer);
   server.on("/kronleuchter", handleACDimmer);
+  server.on("/savename", handleSaveName);
   server.on("/pairing", handlePairing);
   server.on("/client", handleClientDetail);
   server.on("/remove_client", handleRemoveClient);
+  
+  // Relay-Namen aus NVRAM laden
+  Serial.println("\n=== Relay Namen laden ===");
+  loadRelayNames();
+  
   server.begin();
   Serial.println("Webserver gestartet");
 }
@@ -944,6 +993,7 @@ String getHTMLHeader(String activeTab) {
   html += "<a href='/home' class='tab" + String(activeTab == "home" ? " active" : "") + "'>🏠 Home</a>";
   html += "<a href='/espnow' class='tab" + String(activeTab == "espnow" ? " active" : "") + "'>📡 ESP-NOW</a>";
   html += "<a href='/info' class='tab" + String(activeTab == "info" ? " active" : "") + "'>ℹ️ Info</a>";
+  html += "<a href='/edit' class='tab" + String(activeTab == "edit" ? " active" : "") + "'>✏️ Edit</a>";
   html += "</div>";
   
   html += "<div class='content'>";
@@ -1233,6 +1283,85 @@ void handleRemoveClient() {
   // Redirect zurück zur ESP-NOW Seite
   server.sendHeader("Location", "/espnow");
   server.send(303);
+}
+
+// ===== Edit-Seite für Relay-Namen =====
+void handleEdit() {
+  String html = getHTMLHeader("edit");
+  
+  html += "<h3>✏️ Relay-Namen bearbeiten</h3>";
+  html += "<div class='card'>";
+  html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>Namen werden permanent im NVRAM gespeichert.</p>";
+  
+  // Formular für alle 24 Relais
+  for (int i = 0; i < 24; i++) {
+    String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
+    html += "<div style='margin:10px 0;display:flex;align-items:center;gap:10px;'>";
+    html += "<label style='min-width:60px;font-weight:bold;'>" + relaisNum + ":</label>";
+    html += "<input type='text' id='name" + String(i) + "' value='" + relayNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "<button onclick='saveName(" + String(i) + ")' class='btn btn-neutral' style='min-width:80px;'>Speichern</button>";
+    html += "</div>";
+  }
+  
+  html += "</div>";
+  
+  // JavaScript für Save-Funktion
+  html += "<script>";
+  html += "function saveName(relayIndex) {";
+  html += "  var input = document.getElementById('name' + relayIndex);";
+  html += "  var newName = input.value.trim();";
+  html += "  if (newName === '') {";
+  html += "    alert('Name darf nicht leer sein!');";
+  html += "    return;";
+  html += "  }";
+  html += "  fetch('/savename?relay=' + relayIndex + '&name=' + encodeURIComponent(newName))";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    if (data.success) {";
+  html += "      alert('✅ Name gespeichert: ' + newName);";
+  html += "    } else {";
+  html += "      alert('❌ Fehler beim Speichern');";
+  html += "    }";
+  html += "  })";
+  html += "  .catch(function(error) {";
+  html += "    alert('❌ Fehler: ' + error);";
+  html += "  });";
+  html += "}";
+  html += "</script>";
+  
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== API-Handler zum Speichern der Relay-Namen =====
+void handleSaveName() {
+  if (!server.hasArg("relay") || !server.hasArg("name")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+  
+  int relayIndex = server.arg("relay").toInt();
+  String newName = server.arg("name");
+  
+  // Validierung
+  if (relayIndex < 0 || relayIndex >= 24) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid relay index\"}");
+    return;
+  }
+  
+  if (newName.length() == 0 || newName.length() > 30) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
+    return;
+  }
+  
+  // Name speichern
+  saveRelayName(relayIndex, newName);
+  
+  // Erfolg zurückmelden
+  String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + newName + "\"}";
+  server.send(200, "application/json", json);
 }
 
 void handleToggle() {
