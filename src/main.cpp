@@ -88,6 +88,7 @@
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>  // mDNS für Hostname-Auflösung
 #include <Preferences.h>  // NVRAM Speicher für persistente Daten
+#include <PubSubClient.h>  // MQTT Client für Home Assistant
 #include <Adafruit_MCP23X17.h> // 16-Bit GPIO Expander für Eingänge
 #include <Adafruit_PCA9535.h>
 #include "Adafruit_MPR121.h"
@@ -226,6 +227,42 @@ String relayNames[24] = {
 
 Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
 
+// ======================================================
+// MQTT CONFIGURATION & CLIENT
+// ======================================================
+struct MQTTConfig {
+  char broker[64] = "192.168.178.1";  // MQTT Broker IP
+  int port = 1883;
+  char user[32] = "";
+  char password[32] = "";
+  bool enabled = false;
+};
+
+MQTTConfig mqttConfig;
+WiFiClient ethClient;  // Ethernet Client für MQTT
+PubSubClient mqttClient(ethClient);
+
+// MQTT Topics
+#define MQTT_BASE_TOPIC "wt32kg"
+#define MQTT_DISCOVERY_PREFIX "homeassistant"
+
+// MQTT State
+unsigned long lastMQTTReconnect = 0;
+const unsigned long mqttReconnectInterval = 5000;  // 5 Sekunden
+bool mqttDiscoverySent = false;
+unsigned long lastMQTTPublish = 0;
+const unsigned long mqttPublishInterval = 1000;  // Min. 1 Sekunde zwischen State-Updates
+
+// MQTT Funktionsprototypen
+void loadMQTTConfig();
+void saveMQTTConfig();
+void mqttConnect();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void publishMQTTDiscovery();
+void publishRelayState(int relayIndex);
+void publishAllStates();
+void setRelayState(int relayIndex, int state);
+
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
 void toggleFensterrolloDown();
@@ -273,6 +310,8 @@ void handleClientDetail();
 void handleRemoveClient();
 void handleEdit();
 void handleSaveName();
+void handleMQTT();
+void handleSaveMQTT();
 
 
 
@@ -337,6 +376,219 @@ void saveRelayName(int relayIndex, String newName) {
   
   relayNames[relayIndex] = newName;
   Serial.println("✅ Relay " + key + " Name gespeichert: " + newName);
+}
+
+// ======================================================
+// MQTT CONFIGURATION & FUNCTIONS
+// ======================================================
+void loadMQTTConfig() {
+  preferences.begin("mqtt-config", true); // Read-only
+  
+  mqttConfig.enabled = preferences.getBool("enabled", false);
+  preferences.getString("broker", mqttConfig.broker, 64);
+  mqttConfig.port = preferences.getInt("port", 1883);
+  preferences.getString("user", mqttConfig.user, 32);
+  preferences.getString("password", mqttConfig.password, 32);
+  
+  preferences.end();
+  
+  Serial.println("\n=== MQTT Konfiguration geladen ===");
+  Serial.println("Enabled: " + String(mqttConfig.enabled ? "Ja" : "Nein"));
+  Serial.println("Broker: " + String(mqttConfig.broker) + ":" + String(mqttConfig.port));
+  Serial.println("User: " + String(mqttConfig.user));
+  Serial.println("======================================\n");
+}
+
+void saveMQTTConfig() {
+  preferences.begin("mqtt-config", false); // Read-Write
+  
+  preferences.putBool("enabled", mqttConfig.enabled);
+  preferences.putString("broker", mqttConfig.broker);
+  preferences.putInt("port", mqttConfig.port);
+  preferences.putString("user", mqttConfig.user);
+  preferences.putString("password", mqttConfig.password);
+  
+  preferences.end();
+  
+  Serial.println("✅ MQTT Konfiguration gespeichert");
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Payload in String konvertieren
+  char message[length + 1];
+  memcpy(message, payload, length);
+  message[length] = '\0';
+  
+  Serial.print("MQTT RX: ");
+  Serial.print(topic);
+  Serial.print(" = ");
+  Serial.println(message);
+  
+  // Command Topics parsen: wt32kg/relay/XX/set
+  String topicStr = String(topic);
+  if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/relay/")) {
+    // Relay-Index extrahieren
+    int startIdx = String(MQTT_BASE_TOPIC).length() + 7;  // "/relay/"
+    int endIdx = topicStr.indexOf("/set");
+    if (endIdx == -1) return;
+    
+    String relayNumStr = topicStr.substring(startIdx, endIdx);
+    int relayIndex = relayNumStr.toInt();
+    
+    if (relayIndex < 0 || relayIndex >= 24) return;
+    
+    // Command verarbeiten
+    String cmd = String(message);
+    cmd.toUpperCase();
+    
+    if (cmd == "ON") {
+      // Relay einschalten (wenn nicht bereits an)
+      if (relayState[relayIndex] == 0) {
+        // Rufe die entsprechende Toggle-Funktion auf
+        // Simuliere einen Web-Toggle
+        if (relayIndex == 0) toggleFensterrolloUp();
+        else if (relayIndex == 1) toggleFensterrolloDown();
+        else if (relayIndex == 2) toggleTuerrolloUp();
+        else if (relayIndex == 3) toggleTuerrolloDown();
+        else {
+          // Normale Relais 4-23
+          setRelayState(relayIndex, 1);
+        }
+      }
+    } else if (cmd == "OFF") {
+      // Relay ausschalten (wenn nicht bereits aus)
+      if (relayState[relayIndex] == 1) {
+        if (relayIndex == 0) toggleFensterrolloUp();
+        else if (relayIndex == 1) toggleFensterrolloDown();
+        else if (relayIndex == 2) toggleTuerrolloUp();
+        else if (relayIndex == 3) toggleTuerrolloDown();
+        else {
+          setRelayState(relayIndex, 0);
+        }
+      }
+    }
+  }
+}
+
+void mqttConnect() {
+  if (!mqttConfig.enabled) return;
+  
+  if (millis() - lastMQTTReconnect < mqttReconnectInterval) return;
+  lastMQTTReconnect = millis();
+  
+  Serial.print("MQTT: Verbinde zu ");
+  Serial.print(mqttConfig.broker);
+  Serial.print(":");
+  Serial.println(mqttConfig.port);
+  
+  // Client ID mit MAC-Adresse
+  String clientId = "WT32KG-" + WiFi.macAddress();
+  clientId.replace(":", "");
+  
+  bool connected;
+  if (strlen(mqttConfig.user) > 0) {
+    connected = mqttClient.connect(clientId.c_str(), mqttConfig.user, mqttConfig.password);
+  } else {
+    connected = mqttClient.connect(clientId.c_str());
+  }
+  
+  if (connected) {
+    Serial.println("✅ MQTT verbunden!");
+    
+    // Subscribe zu allen Command-Topics
+    for (int i = 0; i < 24; i++) {
+      String cmdTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+      mqttClient.subscribe(cmdTopic.c_str());
+    }
+    
+    // Discovery senden (nur einmal nach Verbindung)
+    publishMQTTDiscovery();
+    
+    // Alle States publishen
+    publishAllStates();
+    
+    mqttDiscoverySent = true;
+  } else {
+    Serial.print("❌ MQTT Verbindung fehlgeschlagen, rc=");
+    Serial.println(mqttClient.state());
+  }
+}
+
+void publishMQTTDiscovery() {
+  if (!mqttClient.connected()) return;
+  
+  Serial.println("📡 Sende Home Assistant Discovery Messages...");
+  
+  // Für alle 24 Relais Discovery-Messages senden
+  for (int i = 0; i < 24; i++) {
+    String deviceId = "wt32kg_relay_" + String(i);
+    String objectId = "relay_" + String(i);
+    String name = relayNames[i] + " (R" + (i < 10 ? "0" : "") + String(i) + ")";
+    
+    // Discovery Topic: homeassistant/switch/wt32kg_relay_X/config
+    String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/switch/" + deviceId + "/config";
+    
+    // State & Command Topics
+    String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+    String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+    
+    // JSON Payload (Home Assistant Discovery Format)
+    String payload = "{";
+    payload += "\"name\":\"" + name + "\",";
+    payload += "\"unique_id\":\"" + deviceId + "\",";
+    payload += "\"object_id\":\"" + objectId + "\",";
+    payload += "\"state_topic\":\"" + stateTopic + "\",";
+    payload += "\"command_topic\":\"" + commandTopic + "\",";
+    payload += "\"payload_on\":\"ON\",";
+    payload += "\"payload_off\":\"OFF\",";
+    payload += "\"state_on\":\"ON\",";
+    payload += "\"state_off\":\"OFF\",";
+    payload += "\"device\":{";
+    payload += "\"identifiers\":[\"wt32kg\"],";
+    payload += "\"name\":\"WT32-KG Controller\",";
+    payload += "\"model\":\"WT32-ETH01\",";
+    payload += "\"manufacturer\":\"ESP32\"";
+    payload += "}";
+    payload += "}";
+    
+    // Publish Discovery Message (retained)
+    mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+    
+    Serial.print("  ✅ R");
+    if (i < 10) Serial.print("0");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(name);
+    
+    delay(50);  // Kleine Verzögerung zwischen Messages
+  }
+  
+  Serial.println("📡 Discovery abgeschlossen!");
+}
+
+void publishRelayState(int relayIndex) {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  if (relayIndex < 0 || relayIndex >= 24) return;
+  
+  // Throttle: Max. 1 State-Update pro Sekunde
+  if (millis() - lastMQTTPublish < mqttPublishInterval) return;
+  lastMQTTPublish = millis();
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(relayIndex) + "/state";
+  String statePayload = relayState[relayIndex] ? "ON" : "OFF";
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
+}
+
+void publishAllStates() {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  
+  for (int i = 0; i < 24; i++) {
+    String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+    String statePayload = relayState[i] ? "ON" : "OFF";
+    mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
+    delay(20);  // Kleine Verzögerung
+  }
 }
 
 // ======================================================
@@ -651,6 +903,8 @@ void setup() {
   server.on("/led", handleLEDDimmer);
   server.on("/kronleuchter", handleACDimmer);
   server.on("/savename", handleSaveName);
+  server.on("/mqtt", handleMQTT);
+  server.on("/savemqtt", handleSaveMQTT);
   server.on("/pairing", handlePairing);
   server.on("/client", handleClientDetail);
   server.on("/remove_client", handleRemoveClient);
@@ -658,6 +912,17 @@ void setup() {
   // Relay-Namen aus NVRAM laden
   Serial.println("\n=== Relay Namen laden ===");
   loadRelayNames();
+  
+  // MQTT Config laden und verbinden
+  Serial.println("\n=== MQTT laden ===");
+  loadMQTTConfig();
+  
+  if (mqttConfig.enabled) {
+    mqttClient.setServer(mqttConfig.broker, mqttConfig.port);
+    mqttClient.setCallback(mqttCallback);
+    mqttClient.setBufferSize(512);  // Größerer Buffer für Discovery-Messages
+    mqttConnect();  // Erste Verbindung
+  }
   
   server.begin();
   Serial.println("Webserver gestartet");
@@ -669,6 +934,15 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();  // OTA Updates verarbeiten
   server.handleClient();
+  
+  // MQTT Client verarbeiten
+  if (mqttConfig.enabled) {
+    if (!mqttClient.connected()) {
+      mqttConnect();  // Auto-Reconnect
+    } else {
+      mqttClient.loop();  // MQTT Messages verarbeiten
+    }
+  }
   
   // ESP-NOW Client-Timeouts prüfen (alle 10 Sekunden)
   static unsigned long lastTimeoutCheck = 0;
@@ -992,6 +1266,7 @@ String getHTMLHeader(String activeTab) {
   html += "<div class='tabs'>";
   html += "<a href='/home' class='tab" + String(activeTab == "home" ? " active" : "") + "'>🏠 Home</a>";
   html += "<a href='/espnow' class='tab" + String(activeTab == "espnow" ? " active" : "") + "'>📡 ESP-NOW</a>";
+  html += "<a href='/mqtt' class='tab" + String(activeTab == "mqtt" ? " active" : "") + "'>📨 MQTT</a>";
   html += "<a href='/info' class='tab" + String(activeTab == "info" ? " active" : "") + "'>ℹ️ Info</a>";
   html += "<a href='/edit' class='tab" + String(activeTab == "edit" ? " active" : "") + "'>✏️ Edit</a>";
   html += "</div>";
@@ -1364,6 +1639,181 @@ void handleSaveName() {
   server.send(200, "application/json", json);
 }
 
+// ===== MQTT-Konfigurationsseite =====
+void handleMQTT() {
+  String html = getHTMLHeader("mqtt");
+  
+  html += "<h3>📨 MQTT Konfiguration</h3>";
+  html += "<div class='card'>";
+  
+  // Status-Anzeige
+  html += "<div style='margin-bottom:15px;padding:10px;background:";
+  html += mqttClient.connected() ? "#1b5e20" : "#b71c1c";
+  html += ";border-radius:3px;'>";
+  html += "<p style='margin:0;color:#fff;'><b>Status: ";
+  html += mqttClient.connected() ? "✅ Verbunden" : "❌ Nicht verbunden";
+  html += "</b></p>";
+  if (mqttClient.connected()) {
+    html += "<p style='margin:5px 0 0 0;color:#ddd;font-size:11px;'>Home Assistant Discovery aktiv</p>";
+  }
+  html += "</div>";
+  
+  // Konfigurationsformular
+  html += "<form onsubmit='saveMQTTConfig(event)' style='margin:15px 0;'>";
+  
+  // Enable Checkbox
+  html += "<div style='margin:10px 0;'>";
+  html += "<label style='display:flex;align-items:center;cursor:pointer;'>";
+  html += "<input type='checkbox' id='mqtt_enabled' " + String(mqttConfig.enabled ? "checked" : "") + " ";
+  html += "style='margin-right:10px;width:16px;height:16px;cursor:pointer;'>";
+  html += "<span>MQTT aktivieren</span>";
+  html += "</label>";
+  html += "</div>";
+  
+  // Broker IP
+  html += "<div style='margin:15px 0;'>";
+  html += "<label>Broker IP:</label><br>";
+  html += "<input type='text' id='mqtt_broker' value='" + String(mqttConfig.broker) + "' ";
+  html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "placeholder='192.168.178.1'>";
+  html += "</div>";
+  
+  // Port
+  html += "<div style='margin:15px 0;'>";
+  html += "<label>Port:</label><br>";
+  html += "<input type='number' id='mqtt_port' value='" + String(mqttConfig.port) + "' ";
+  html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "placeholder='1883'>";
+  html += "</div>";
+  
+  // User
+  html += "<div style='margin:15px 0;'>";
+  html += "<label>User (optional):</label><br>";
+  html += "<input type='text' id='mqtt_user' value='" + String(mqttConfig.user) + "' ";
+  html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "placeholder='mqtt_user'>";
+  html += "</div>";
+  
+  // Password
+  html += "<div style='margin:15px 0;'>";
+  html += "<label>Passwort (optional):</label><br>";
+  html += "<input type='password' id='mqtt_pass' value='" + String(mqttConfig.password) + "' ";
+  html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "placeholder='****'>";
+  html += "</div>";
+  
+  // Buttons
+  html += "<div style='margin:20px 0;display:flex;gap:10px;'>";
+  html += "<button type='submit' class='btn btn-on'>💾 Speichern & Neu starten</button>";
+  html += "<button type='button' onclick='testMQTT()' class='btn btn-neutral'>🔍 Verbindung testen</button>";
+  html += "</div>";
+  
+  html += "</form>";
+  
+  // Info-Box
+  html += "<div class='card' style='background:#1a2332;border-color:#1fa3ec;'>";
+  html += "<p style='margin:5px 0;font-size:11px;'><b>📌 Home Assistant Integration:</b></p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Base Topic: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_BASE_TOPIC) + "</code></p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Discovery Prefix: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_DISCOVERY_PREFIX) + "</code></p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Entities: 24 Switches (R00-R23)</p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Auto-Discovery beim Boot</p>";
+  html += "</div>";
+  
+  html += "</div>";
+  
+  // JavaScript
+  html += "<script>";
+  html += "function saveMQTTConfig(event) {";
+  html += "  event.preventDefault();";
+  html += "  var enabled = document.getElementById('mqtt_enabled').checked;";
+  html += "  var broker = document.getElementById('mqtt_broker').value.trim();";
+  html += "  var port = document.getElementById('mqtt_port').value;";
+  html += "  var user = document.getElementById('mqtt_user').value.trim();";
+  html += "  var pass = document.getElementById('mqtt_pass').value.trim();";
+  html += "  if (enabled && broker === '') {";
+  html += "    alert('Broker IP darf nicht leer sein!');";
+  html += "    return;";
+  html += "  }";
+  html += "  var params = '?enabled=' + (enabled?'1':'0');";
+  html += "  params += '&broker=' + encodeURIComponent(broker);";
+  html += "  params += '&port=' + port;";
+  html += "  params += '&user=' + encodeURIComponent(user);";
+  html += "  params += '&pass=' + encodeURIComponent(pass);";
+  html += "  fetch('/savemqtt' + params)";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    if (data.success) {";
+  html += "      alert('✅ MQTT Config gespeichert!\\n\\n⚠️ ESP32 startet neu...');";
+  html += "      setTimeout(function() { location.reload(); }, 3000);";
+  html += "    } else {";
+  html += "      alert('❌ Fehler beim Speichern');";
+  html += "    }";
+  html += "  });";
+  html += "}";
+  html += "function testMQTT() {";
+  html += "  alert('🔍 Test-Verbindung wird geprüft...\\n(Siehe Serial Monitor für Details)');";
+  html += "}";
+  html += "</script>";
+  
+  html += getHTMLFooter();
+  server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== MQTT Config Speichern =====
+void handleSaveMQTT() {
+  mqttConfig.enabled = server.hasArg("enabled") && server.arg("enabled") == "1";
+  
+  if (server.hasArg("broker")) {
+    server.arg("broker").toCharArray(mqttConfig.broker, 64);
+  }
+  if (server.hasArg("port")) {
+    mqttConfig.port = server.arg("port").toInt();
+  }
+  if (server.hasArg("user")) {
+    server.arg("user").toCharArray(mqttConfig.user, 32);
+  }
+  if (server.hasArg("pass")) {
+    server.arg("pass").toCharArray(mqttConfig.password, 32);
+  }
+  
+  saveMQTTConfig();
+  
+  String json = "{\"success\":true,\"restart\":true}";
+  server.send(200, "application/json", json);
+  
+  // Nach kurzer Verzögerung neu starten
+  delay(1000);
+  ESP.restart();
+}
+
+// ===== Relay State setzen mit MQTT Publish =====
+void setRelayState(int relayIndex, int state) {
+  if (relayIndex < 0 || relayIndex >= 24) return;
+  
+  relayState[relayIndex] = state;
+  
+  // Hardware schalten
+  int board = relayIndex / 8;  // 0, 1, 2
+  int pin = relayIndex % 8;    // 0-7
+  
+  if (board == 0) {
+    pcaRel1.digitalWrite(pin, state ? HIGH : LOW);
+  } else if (board == 1) {
+    pcaRel2.digitalWrite(pin, state ? HIGH : LOW);
+  } else if (board == 2) {
+    pcaRel3.digitalWrite(pin, state ? HIGH : LOW);
+  }
+  
+  // MQTT State publishen
+  publishRelayState(relayIndex);
+  
+  Serial.print("Relay R");
+  if (relayIndex < 10) Serial.print("0");
+  Serial.print(relayIndex);
+  Serial.print(" → ");
+  Serial.println(state ? "EIN" : "AUS");
+}
+
 void handleToggle() {
   int idx = server.arg("r").toInt();
   Serial.print("🔧 handleToggle() called - Index: ");
@@ -1405,6 +1855,9 @@ void handleToggle() {
       pcaRel3.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
       Serial.println("  -> Written to pcaRel3");
     }
+    
+    // MQTT State publishen
+    publishRelayState(idx);
   }
   
   // AJAX-Support: JSON mit aktuellem Status zurückgeben
