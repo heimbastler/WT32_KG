@@ -312,6 +312,7 @@ void handleEdit();
 void handleSaveName();
 void handleMQTT();
 void handleSaveMQTT();
+void handleRestart();
 
 
 
@@ -905,6 +906,7 @@ void setup() {
   server.on("/savename", handleSaveName);
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
+  server.on("/restart", handleRestart);
   server.on("/pairing", handlePairing);
   server.on("/client", handleClientDetail);
   server.on("/remove_client", handleRemoveClient);
@@ -1461,6 +1463,27 @@ void handleInfo() {
   html += "<tr><td>Firmware</td><td>WT32-KG Controller v1.0</td></tr>";
   html += "</table>";
   
+  // Restart Button
+  html += "<div style='margin:20px 0;text-align:center;'>";
+  html += "<button onclick='restartESP()' class='btn btn-neutral' style='min-width:200px;'>🔄 ESP32 neu starten</button>";
+  html += "</div>";
+  
+  // JavaScript für Restart
+  html += "<script>";
+  html += "function restartESP() {";
+  html += "  if (confirm('ESP32 wirklich neu starten?\\n\\nWebserver wird für ~10 Sekunden nicht erreichbar sein.')) {";
+  html += "    fetch('/restart')";
+  html += "    .then(function() {";
+  html += "      alert('✅ ESP32 wird neu gestartet...\\n\\nBitte warten Sie 10 Sekunden.');";
+  html += "      setTimeout(function() { location.reload(); }, 10000);";
+  html += "    })";
+  html += "    .catch(function(error) {";
+  html += "      alert('❌ Fehler beim Restart: ' + error);";
+  html += "    });";
+  html += "  }";
+  html += "}";
+  html += "</script>";
+  
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
 }
@@ -1757,6 +1780,34 @@ void handleMQTT() {
   
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== ESP32 Restart =====
+void handleRestart() {
+  String html = "<html><head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta http-equiv='refresh' content='10; url=/info'>";
+  html += "<title>Restart</title>";
+  html += "<style>body{font-family:Arial;text-align:center;padding:50px;background:#1a1a1a;color:#eee;}</style>";
+  html += "</head><body>";
+  html += "<div style='background:#252525;padding:30px;border-radius:8px;display:inline-block;box-shadow:0 2px 5px rgba(0,0,0,0.3);'>";
+  html += "<h2 style='margin-top:0;color:#1fa3ec;'>🔄 ESP32 wird neu gestartet</h2>";
+  html += "<p style='font-size:18px;margin:20px 0;'>Bitte warten Sie ~10 Sekunden...</p>";
+  html += "<div style='margin:20px 0;'>";
+  html += "<div style='width:200px;height:4px;background:#333;border-radius:2px;overflow:hidden;margin:0 auto;'>";
+  html += "<div style='width:0%;height:100%;background:#1fa3ec;animation:progress 10s linear;'></div>";
+  html += "</div>";
+  html += "</div>";
+  html += "<p style='color:#888;font-size:12px;'>Sie werden automatisch weitergeleitet...</p>";
+  html += "</div>";
+  html += "<style>@keyframes progress{to{width:100%;}}</style>";
+  html += "</body></html>";
+  
+  server.send(200, "text/html; charset=UTF-8", html);
+  
+  Serial.println("\n🔄 ESP32 Restart angefordert...");
+  delay(1000);
+  ESP.restart();
 }
 
 // ===== MQTT Config Speichern =====
