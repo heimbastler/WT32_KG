@@ -1606,6 +1606,37 @@ void handleInfo() {
   html += "}";
   html += "</script>";
   
+  // GitHub Repository
+  html += "<h3>📦 Repository & Dokumentation</h3>";
+  html += "<div class='card' style='text-align:center;'>";
+  html += "<div style='margin:15px 0;'>";
+  html += "<a href='https://github.com/heimbastler/WT32_KG' target='_blank' class='btn btn-neutral' style='min-width:250px;'>";
+  html += "🐙 GitHub Repository öffnen";
+  html += "</a>";
+  html += "</div>";
+  
+  // QR-Code zum Repository
+  html += "<div style='margin:20px 0;'>";
+  html += "<p style='color:#aaa;font-size:12px;margin-bottom:10px;'>📱 QR-Code scannen für Repo-Zugriff:</p>";
+  html += "<img src='https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://github.com/heimbastler/WT32_KG' ";
+  html += "alt='QR Code GitHub Repo' style='border:2px solid #333;border-radius:8px;background:white;padding:10px;'>";
+  html += "</div>";
+  
+  html += "<div style='margin-top:15px;'>";
+  html += "<p style='font-size:11px;color:#888;'>";
+  html += "📚 Dokumentation, Schaltpläne, Pin-Belegung & Updates";
+  html += "</p>";
+  html += "</div>";
+  
+  // Platzhalter für zukünftiges Pin-Belegungs-Bild
+  // TODO: Pin-Belegungsdiagramm hier einfügen
+  // html += "<div style='margin:20px 0;'>";
+  // html += "<h4>🔌 Steckerbelegung</h4>";
+  // html += "<img src='/pinout.png' alt='Pin Belegung' style='max-width:100%;border:2px solid #333;border-radius:8px;'>";
+  // html += "</div>";
+  
+  html += "</div>";
+  
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
 }
