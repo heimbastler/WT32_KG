@@ -225,6 +225,45 @@ String relayNames[24] = {
   "Relais 23"               // R23, idx 23
 };
 
+// Home Assistant Device-Typ & Enable-Status für jedes Relais
+// Typen: "none", "switch", "light", "cover", "fan"
+String relayHAType[24] = {
+  "cover",   // R00 - Fensterrollo hoch
+  "cover",   // R01 - Fensterrollo runter  
+  "cover",   // R02 - Türrollo hoch
+  "cover",   // R03 - Türrollo runter
+  "light",   // R04 - Aussenlampe Garten
+  "light",   // R05 - Steinlampe
+  "light",   // R06 - KG Flurlampe
+  "light",   // R07 - Kuechenarbeitslampe
+  "light",   // R08 - Kuechenlampe
+  "light",   // R09 - EG Flurlampe
+  "light",   // R10 - Traegerlampen
+  "light",   // R11 - Kronleuchter Relais
+  "light",   // R12 - Reserve Wohnzimmer
+  "switch",  // R13 - Relais 13
+  "switch",  // R14 - Relais 14
+  "switch",  // R15 - Relais 15
+  "switch",  // R16 - Relais 16
+  "switch",  // R17 - Relais 17
+  "switch",  // R18 - Relais 18
+  "switch",  // R19 - Relais 19
+  "switch",  // R20 - Relais 20
+  "switch",  // R21 - Relais 21
+  "switch",  // R22 - Relais 22
+  "switch"   // R23 - Relais 23
+};
+
+// HA Discovery Enable/Disable pro Relais
+bool relayHAEnabled[24] = {
+  true,  true,  true,  true,   // R00-R03: Rollos enabled
+  true,  true,  true,  true,   // R04-R07: Lampen enabled
+  true,  true,  true,  true,   // R08-R11: Lampen enabled  
+  true,  false, false, false,  // R12-R15: R12 enabled, Rest disabled
+  false, false, false, false,  // R16-R19: disabled
+  false, false, false, false   // R20-R23: disabled
+};
+
 Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
 
 // ======================================================
@@ -371,6 +410,53 @@ void loadRelayNames() {
   Serial.println("===========================================\n");
 }
 
+void loadRelayHAConfig() {
+  preferences.begin("relay-ha-config", true); // Read-only Modus
+  
+  for (int i = 0; i < 24; i++) {
+    String keyType = "type_" + String(i);
+    String keyEnabled = "en_" + String(i);
+    
+    // Type laden (falls gespeichert, sonst Default behalten)
+    String savedType = preferences.getString(keyType.c_str(), "");
+    if (savedType.length() > 0) {
+      relayHAType[i] = savedType;
+    }
+    
+    // Enabled laden (Default ist der aktuelle Wert aus dem Array)
+    // Wir prüfen ob der Key existiert, indem wir auf einen unmöglichen Wert prüfen
+    if (preferences.isKey(keyEnabled.c_str())) {
+      relayHAEnabled[i] = preferences.getBool(keyEnabled.c_str(), true);
+    }
+  }
+  
+  preferences.end();
+  Serial.println("✅ HA Device-Konfiguration geladen\n");
+}
+
+void saveRelayHAConfig(int relayIndex, String type, bool enabled) {
+  if (relayIndex < 0 || relayIndex >= 24) {
+    Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
+    return;
+  }
+  
+  preferences.begin("relay-ha-config", false); // Read-Write Modus
+  
+  String keyType = "type_" + String(relayIndex);
+  String keyEnabled = "en_" + String(relayIndex);
+  
+  preferences.putString(keyType.c_str(), type);
+  preferences.putBool(keyEnabled.c_str(), enabled);
+  
+  preferences.end();
+  
+  // Arrays aktualisieren
+  relayHAType[relayIndex] = type;
+  relayHAEnabled[relayIndex] = enabled;
+  
+  Serial.println("✅ R" + String(relayIndex) + " HA Config: Type=" + type + ", Enabled=" + String(enabled));
+}
+
 void saveRelayName(int relayIndex, String newName) {
   if (relayIndex < 0 || relayIndex >= 24) {
     Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
@@ -492,6 +578,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
           setRelayState(relayIndex, 0);
         }
       }
+    } else if (cmd == "STOP") {
+      // STOP Command für Cover-Devices
+      // Stoppe Fensterrollo (R00 + R01)
+      if (relayIndex == 0 || relayIndex == 1) {
+        setRelayState(0, 0);  // Fenster hoch stoppen
+        setRelayState(1, 0);  // Fenster runter stoppen
+        Serial.println("⏹️ Fensterrollo STOPP via MQTT");
+      }
+      // Stoppe Türrollo (R02 + R03)
+      else if (relayIndex == 2 || relayIndex == 3) {
+        setRelayState(2, 0);  // Tür hoch stoppen
+        setRelayState(3, 0);  // Tür runter stoppen
+        Serial.println("⏹️ Türrollo STOPP via MQTT");
+      }
+      // Für andere Relais: ausschalten
+      else {
+        setRelayState(relayIndex, 0);
+      }
     }
   }
   
@@ -567,46 +671,120 @@ void publishMQTTDiscovery() {
   
   Serial.println("📡 Sende Home Assistant Discovery Messages...");
   
+  // Device-Info (wird bei allen Entities verwendet)
+  String deviceInfo = "\"device\":{";
+  deviceInfo += "\"identifiers\":[\"wt32kg\"],";
+  deviceInfo += "\"name\":\"WT32-KG Controller\",";
+  deviceInfo += "\"model\":\"WT32-ETH01\",";
+  deviceInfo += "\"manufacturer\":\"ESP32\"";
+  deviceInfo += "}";
+  
   // Für alle 24 Relais Discovery-Messages senden
   for (int i = 0; i < 24; i++) {
+    // Skip wenn nicht enabled
+    if (!relayHAEnabled[i]) {
+      Serial.println("  ⏭️ R" + String(i) + " übersprungen (deaktiviert)");
+      continue;
+    }
+    
+    String type = relayHAType[i];
+    String name = relayNames[i] + " (R" + (i < 10 ? "0" : "") + String(i) + ")";
     String deviceId = "wt32kg_relay_" + String(i);
     String objectId = "relay_" + String(i);
-    String name = relayNames[i] + " (R" + (i < 10 ? "0" : "") + String(i) + ")";
     
-    // Discovery Topic: homeassistant/switch/wt32kg_relay_X/config
-    String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/switch/" + deviceId + "/config";
+    // Skip bei "none"
+    if (type == "none") {
+      Serial.println("  ⏭️ R" + String(i) + " übersprungen (type=none)");
+      continue;
+    }
     
-    // State & Command Topics
-    String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
-    String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+    // SWITCH Discovery
+    if (type == "switch") {
+      String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/switch/" + deviceId + "/config";
+      String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+      String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+      
+      String payload = "{";
+      payload += "\"name\":\"" + name + "\",";
+      payload += "\"unique_id\":\"" + deviceId + "\",";
+      payload += "\"object_id\":\"" + objectId + "\",";
+      payload += "\"state_topic\":\"" + stateTopic + "\",";
+      payload += "\"command_topic\":\"" + commandTopic + "\",";
+      payload += "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",";
+      payload += "\"state_on\":\"ON\",\"state_off\":\"OFF\",";
+      payload += deviceInfo + "}";
+      
+      mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+      String relayNum = (i < 10 ? "R0" : "R") + String(i);
+      Serial.println("  ✅ " + relayNum + ": " + name + " (Switch)");
+    }
     
-    // JSON Payload (Home Assistant Discovery Format)
-    String payload = "{";
-    payload += "\"name\":\"" + name + "\",";
-    payload += "\"unique_id\":\"" + deviceId + "\",";
-    payload += "\"object_id\":\"" + objectId + "\",";
-    payload += "\"state_topic\":\"" + stateTopic + "\",";
-    payload += "\"command_topic\":\"" + commandTopic + "\",";
-    payload += "\"payload_on\":\"ON\",";
-    payload += "\"payload_off\":\"OFF\",";
-    payload += "\"state_on\":\"ON\",";
-    payload += "\"state_off\":\"OFF\",";
-    payload += "\"device\":{";
-    payload += "\"identifiers\":[\"wt32kg\"],";
-    payload += "\"name\":\"WT32-KG Controller\",";
-    payload += "\"model\":\"WT32-ETH01\",";
-    payload += "\"manufacturer\":\"ESP32\"";
-    payload += "}";
-    payload += "}";
+    // LIGHT Discovery
+    else if (type == "light") {
+      String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/light/" + deviceId + "/config";
+      String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+      String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+      
+      String payload = "{";
+      payload += "\"name\":\"" + name + "\",";
+      payload += "\"unique_id\":\"" + deviceId + "\",";
+      payload += "\"object_id\":\"" + objectId + "\",";
+      payload += "\"state_topic\":\"" + stateTopic + "\",";
+      payload += "\"command_topic\":\"" + commandTopic + "\",";
+      payload += "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",";
+      payload += "\"state_on\":\"ON\",\"state_off\":\"OFF\",";
+      payload += deviceInfo + "}";
+      
+      mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+      String relayNum = (i < 10 ? "R0" : "R") + String(i);
+      Serial.println("  ✅ " + relayNum + ": " + name + " (Light)");
+    }
     
-    // Publish Discovery Message (retained)
-    mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+    // COVER Discovery (Rollladen/Jalousie)
+    else if (type == "cover") {
+      String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/cover/" + deviceId + "/config";
+      String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+      String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+      
+      String payload = "{";
+      payload += "\"name\":\"" + name + "\",";
+      payload += "\"unique_id\":\"" + deviceId + "\",";
+      payload += "\"object_id\":\"" + objectId + "\",";
+      payload += "\"command_topic\":\"" + commandTopic + "\",";
+      payload += "\"state_topic\":\"" + stateTopic + "\",";
+      payload += "\"payload_open\":\"ON\",";
+      payload += "\"payload_close\":\"OFF\",";
+      payload += "\"payload_stop\":\"STOP\",";
+      payload += "\"state_open\":\"ON\",";
+      payload += "\"state_closed\":\"OFF\",";
+      payload += "\"device_class\":\"blind\",";
+      payload += deviceInfo + "}";
+      
+      mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+      String relayNum = (i < 10 ? "R0" : "R") + String(i);
+      Serial.println("  ✅ " + relayNum + ": " + name + " (Cover)");
+    }
     
-    Serial.print("  ✅ R");
-    if (i < 10) Serial.print("0");
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(name);
+    // FAN Discovery
+    else if (type == "fan") {
+      String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/fan/" + deviceId + "/config";
+      String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
+      String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
+      
+      String payload = "{";
+      payload += "\"name\":\"" + name + "\",";
+      payload += "\"unique_id\":\"" + deviceId + "\",";
+      payload += "\"object_id\":\"" + objectId + "\",";
+      payload += "\"state_topic\":\"" + stateTopic + "\",";
+      payload += "\"command_topic\":\"" + commandTopic + "\",";
+      payload += "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",";
+      payload += "\"state_on\":\"ON\",\"state_off\":\"OFF\",";
+      payload += deviceInfo + "}";
+      
+      mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+      String relayNum = (i < 10 ? "R0" : "R") + String(i);
+      Serial.println("  ✅ " + relayNum + ": " + name + " (Fan)");
+    }
     
     delay(50);  // Kleine Verzögerung zwischen Messages
   }
@@ -629,12 +807,7 @@ void publishMQTTDiscovery() {
   mpr121Payload += "\"state_on\":\"ON\",";
   mpr121Payload += "\"state_off\":\"OFF\",";
   mpr121Payload += "\"icon\":\"mdi:gesture-tap\",";
-  mpr121Payload += "\"device\":{";
-  mpr121Payload += "\"identifiers\":[\"wt32kg\"],";
-  mpr121Payload += "\"name\":\"WT32-KG Controller\",";
-  mpr121Payload += "\"model\":\"WT32-ETH01\",";
-  mpr121Payload += "\"manufacturer\":\"ESP32\"";
-  mpr121Payload += "}";
+  mpr121Payload += deviceInfo;
   mpr121Payload += "}";
   
   mqttClient.publish(mpr121DiscoveryTopic.c_str(), mpr121Payload.c_str(), true);
@@ -1003,6 +1176,9 @@ void setup() {
   // Relay-Namen aus NVRAM laden
   Serial.println("\n=== Relay Namen laden ===");
   loadRelayNames();
+  
+  // HA Device-Konfiguration laden
+  loadRelayHAConfig();
   
   // MPR121 State laden
   loadMPR121State();
@@ -1740,38 +1916,81 @@ void handleRemoveClient() {
 void handleEdit() {
   String html = getHTMLHeader("edit");
   
-  html += "<h3>✏️ Relay-Namen bearbeiten</h3>";
+  html += "<h3>✏️ Relay-Namen & Home Assistant Konfiguration</h3>";
   html += "<div class='card'>";
-  html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>Namen werden permanent im NVRAM gespeichert.</p>";
+  html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>";
+  html += "Namen, Device-Typ und HA-Status werden permanent im NVRAM gespeichert.<br>";
+  html += "💡 <b>Cover</b> = Rollläden/Jalousien | <b>Light</b> = Lampen | <b>Switch</b> = Schalter";
+  html += "</p>";
   
   // Formular für alle 24 Relais
   for (int i = 0; i < 24; i++) {
     String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
-    html += "<div style='margin:10px 0;display:flex;align-items:center;gap:10px;'>";
-    html += "<label style='min-width:60px;font-weight:bold;'>" + relaisNum + ":</label>";
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>";
+    
+    // Erste Zeile: Relais-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:60px;font-weight:bold;color:#1fa3ec;'>" + relaisNum + ":</label>";
     html += "<input type='text' id='name" + String(i) + "' value='" + relayNames[i] + "' ";
     html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
     html += "maxlength='30'>";
-    html += "<button onclick='saveName(" + String(i) + ")' class='btn btn-neutral' style='min-width:80px;'>Speichern</button>";
     html += "</div>";
+    
+    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    
+    // Device-Typ Dropdown
+    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
+    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
+    html += "<select id='type" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
+    
+    // Optionen mit aktuellem Wert ausgewählt
+    String types[] = {"none", "switch", "light", "cover", "fan"};
+    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "💡 Light", "🪟 Cover", "🌀 Fan"};
+    for (int t = 0; t < 5; t++) {
+      String selected = (relayHAType[i] == types[t]) ? " selected" : "";
+      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+    }
+    
+    html += "</select>";
+    html += "</div>";
+    
+    // HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = relayHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='enabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='enabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
+    html += "</div>";
+    
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close relay card
   }
   
   html += "</div>";
   
   // JavaScript für Save-Funktion
   html += "<script>";
-  html += "function saveName(relayIndex) {";
-  html += "  var input = document.getElementById('name' + relayIndex);";
-  html += "  var newName = input.value.trim();";
-  html += "  if (newName === '') {";
+  html += "function saveConfig(relayIndex) {";
+  html += "  var name = document.getElementById('name' + relayIndex).value.trim();";
+  html += "  var type = document.getElementById('type' + relayIndex).value;";
+  html += "  var enabled = document.getElementById('enabled' + relayIndex).checked ? '1' : '0';";
+  html += "  if (name === '') {";
   html += "    alert('Name darf nicht leer sein!');";
   html += "    return;";
   html += "  }";
-  html += "  fetch('/savename?relay=' + relayIndex + '&name=' + encodeURIComponent(newName))";
+  html += "  fetch('/savename?relay=' + relayIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)";
   html += "  .then(function(response) { return response.json(); })";
   html += "  .then(function(data) {";
   html += "    if (data.success) {";
-  html += "      alert('✅ Name gespeichert: ' + newName);";
+  html += "      alert('✅ Konfiguration gespeichert\\n\\nName: ' + name + '\\nTyp: ' + type + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
   html += "    } else {";
   html += "      alert('❌ Fehler beim Speichern');";
   html += "    }";
@@ -1786,7 +2005,7 @@ void handleEdit() {
   server.send(200, "text/html; charset=UTF-8", html);
 }
 
-// ===== API-Handler zum Speichern der Relay-Namen =====
+// ===== API-Handler zum Speichern der Relay-Namen & HA-Config =====
 void handleSaveName() {
   if (!server.hasArg("relay") || !server.hasArg("name")) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
@@ -1795,6 +2014,8 @@ void handleSaveName() {
   
   int relayIndex = server.arg("relay").toInt();
   String newName = server.arg("name");
+  String newType = server.hasArg("type") ? server.arg("type") : "switch";
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   // Validierung
   if (relayIndex < 0 || relayIndex >= 24) {
@@ -1807,11 +2028,25 @@ void handleSaveName() {
     return;
   }
   
+  // Type validieren
+  if (newType != "none" && newType != "switch" && newType != "light" && newType != "cover" && newType != "fan") {
+    newType = "switch";  // Fallback auf switch
+  }
+  
   // Name speichern
   saveRelayName(relayIndex, newName);
   
+  // HA-Config speichern
+  saveRelayHAConfig(relayIndex, newType, newEnabled);
+  
+  // MQTT Discovery neu senden (falls MQTT aktiv)
+  if (mqttConfig.enabled && mqttClient.connected()) {
+    Serial.println("🔄 MQTT Discovery wird neu gesendet...");
+    publishMQTTDiscovery();
+  }
+  
   // Erfolg zurückmelden
-  String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + newName + "\"}";
+  String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
