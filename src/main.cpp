@@ -253,6 +253,9 @@ bool mqttDiscoverySent = false;
 unsigned long lastMQTTPublish = 0;
 const unsigned long mqttPublishInterval = 1000;  // Min. 1 Sekunde zwischen State-Updates
 
+// MPR121 Touch Enable/Disable
+bool mpr121Enabled = true;  // Standard: AKTIV nach Boot
+
 // MQTT Funktionsprototypen
 void loadMQTTConfig();
 void saveMQTTConfig();
@@ -260,8 +263,11 @@ void mqttConnect();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishMQTTDiscovery();
 void publishRelayState(int relayIndex);
+void publishMPR121State();
 void publishAllStates();
 void setRelayState(int relayIndex, int state);
+void loadMPR121State();
+void saveMPR121State();
 
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
@@ -313,6 +319,7 @@ void handleSaveName();
 void handleMQTT();
 void handleSaveMQTT();
 void handleRestart();
+void handleToggleMPR121();
 
 
 
@@ -400,6 +407,24 @@ void loadMQTTConfig() {
   Serial.println("======================================\n");
 }
 
+void loadMPR121State() {
+  preferences.begin("mpr121-config", true); // Read-only
+  mpr121Enabled = preferences.getBool("enabled", true);  // Default: true
+  preferences.end();
+  
+  Serial.println("\n=== MPR121 Status geladen ===");
+  Serial.println("Touch-Eingabe: " + String(mpr121Enabled ? "AKTIV" : "DEAKTIVIERT"));
+  Serial.println("================================\n");
+}
+
+void saveMPR121State() {
+  preferences.begin("mpr121-config", false); // Read-write
+  preferences.putBool("enabled", mpr121Enabled);
+  preferences.end();
+  
+  Serial.println("📝 MPR121 Status gespeichert: " + String(mpr121Enabled ? "AKTIV" : "DEAKTIVIERT"));
+}
+
 void saveMQTTConfig() {
   preferences.begin("mqtt-config", false); // Read-Write
   
@@ -469,6 +494,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       }
     }
   }
+  
+  // MPR121 Command Topic: wt32kg/mpr121/set
+  if (topicStr == String(MQTT_BASE_TOPIC) + "/mpr121/set") {
+    String cmd = String(message);
+    cmd.toUpperCase();
+    
+    if (cmd == "ON") {
+      mpr121Enabled = true;
+      saveMPR121State();
+      publishMPR121State();
+      Serial.println("✅ MPR121 Touch-Eingabe via MQTT AKTIVIERT");
+    } else if (cmd == "OFF") {
+      mpr121Enabled = false;
+      saveMPR121State();
+      publishMPR121State();
+      Serial.println("⛔ MPR121 Touch-Eingabe via MQTT DEAKTIVIERT");
+    }
+  }
 }
 
 void mqttConnect() {
@@ -501,6 +544,10 @@ void mqttConnect() {
       String cmdTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       mqttClient.subscribe(cmdTopic.c_str());
     }
+    
+    // Subscribe zu MPR121 Command Topic
+    String mpr121CmdTopic = String(MQTT_BASE_TOPIC) + "/mpr121/set";
+    mqttClient.subscribe(mpr121CmdTopic.c_str());
     
     // Discovery senden (nur einmal nach Verbindung)
     publishMQTTDiscovery();
@@ -564,6 +611,35 @@ void publishMQTTDiscovery() {
     delay(50);  // Kleine Verzögerung zwischen Messages
   }
   
+  // MPR121 Touch Enable/Disable Switch
+  String mpr121DeviceId = "wt32kg_mpr121_enable";
+  String mpr121Name = "MPR121 Touch-Eingabe";
+  String mpr121DiscoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/switch/" + mpr121DeviceId + "/config";
+  String mpr121StateTopic = String(MQTT_BASE_TOPIC) + "/mpr121/state";
+  String mpr121CommandTopic = String(MQTT_BASE_TOPIC) + "/mpr121/set";
+  
+  String mpr121Payload = "{";
+  mpr121Payload += "\"name\":\"" + mpr121Name + "\",";
+  mpr121Payload += "\"unique_id\":\"" + mpr121DeviceId + "\",";
+  mpr121Payload += "\"object_id\":\"mpr121_enable\",";
+  mpr121Payload += "\"state_topic\":\"" + mpr121StateTopic + "\",";
+  mpr121Payload += "\"command_topic\":\"" + mpr121CommandTopic + "\",";
+  mpr121Payload += "\"payload_on\":\"ON\",";
+  mpr121Payload += "\"payload_off\":\"OFF\",";
+  mpr121Payload += "\"state_on\":\"ON\",";
+  mpr121Payload += "\"state_off\":\"OFF\",";
+  mpr121Payload += "\"icon\":\"mdi:gesture-tap\",";
+  mpr121Payload += "\"device\":{";
+  mpr121Payload += "\"identifiers\":[\"wt32kg\"],";
+  mpr121Payload += "\"name\":\"WT32-KG Controller\",";
+  mpr121Payload += "\"model\":\"WT32-ETH01\",";
+  mpr121Payload += "\"manufacturer\":\"ESP32\"";
+  mpr121Payload += "}";
+  mpr121Payload += "}";
+  
+  mqttClient.publish(mpr121DiscoveryTopic.c_str(), mpr121Payload.c_str(), true);
+  Serial.println("  ✅ MPR121 Touch Enable Switch: " + mpr121Name);
+  
   Serial.println("📡 Discovery abgeschlossen!");
 }
 
@@ -581,6 +657,15 @@ void publishRelayState(int relayIndex) {
   mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
 }
 
+void publishMPR121State() {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/mpr121/state";
+  String statePayload = mpr121Enabled ? "ON" : "OFF";
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
+}
+
 void publishAllStates() {
   if (!mqttClient.connected() || !mqttConfig.enabled) return;
   
@@ -590,6 +675,9 @@ void publishAllStates() {
     mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
     delay(20);  // Kleine Verzögerung
   }
+  
+  // MPR121 State publishen
+  publishMPR121State();
 }
 
 // ======================================================
@@ -907,6 +995,7 @@ void setup() {
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
   server.on("/restart", handleRestart);
+  server.on("/toggle_mpr121", handleToggleMPR121);
   server.on("/pairing", handlePairing);
   server.on("/client", handleClientDetail);
   server.on("/remove_client", handleRemoveClient);
@@ -914,6 +1003,9 @@ void setup() {
   // Relay-Namen aus NVRAM laden
   Serial.println("\n=== Relay Namen laden ===");
   loadRelayNames();
+  
+  // MPR121 State laden
+  loadMPR121State();
   
   // MQTT Config laden und verbinden
   Serial.println("\n=== MQTT laden ===");
@@ -1038,11 +1130,13 @@ void loop() {
   //   handleTouchEvents();  // Touch-Events verarbeiten
   // }
   
-  // Touch Events verarbeiten (Polling-basiert, alle 100ms) - DEAKTIVIERT
-  // if (millis() - lastI2CRead >= i2cReadInterval) {
-  //   lastI2CRead = millis();
-  //   handleTouchEvents();
-  // }
+  // Touch Events verarbeiten (Polling-basiert, alle 100ms)
+  static unsigned long lastI2CRead = 0;
+  const unsigned long i2cReadInterval = 100;
+  if (mpr121Enabled && millis() - lastI2CRead >= i2cReadInterval) {
+    lastI2CRead = millis();
+    handleTouchEvents();
+  }
 
   // Temperaturen alle 1 Minute aktualisieren
   if (millis() - lastTempUpdate > tempUpdateInterval) {
@@ -1284,6 +1378,34 @@ String getHTMLFooter() {
 // ===== Home-Seite =====
 void handleHome() {
   String html = getHTMLHeader("home");
+  
+  // MPR121 Touch Enable/Disable
+  html += "<h3>📱 Touch-Eingabe (MPR121)</h3>";
+  html += "<div style='margin:15px 0;'>";
+  String mpr121BtnClass = mpr121Enabled ? "btn-on" : "btn-off";
+  String mpr121BtnText = mpr121Enabled ? "✅ Touch-Eingabe AKTIV" : "⛔ Touch-Eingabe DEAKTIVIERT";
+  html += "<button onclick='toggleMPR121(this)' class='btn " + mpr121BtnClass + "' style='min-width:280px;'>" + mpr121BtnText + "</button>";
+  html += "<p style='font-size:11px;color:#aaa;margin:10px 0 0 0;'>";
+  html += "🎯 Aktiviert/Deaktiviert die Auswertung der 3× MPR121 Touch-Sensoren<br>";
+  html += "💡 Bei Problemen mit ungewollten Touch-Events deaktivieren";
+  html += "</p>";
+  html += "</div>";
+  
+  html += "<script>";
+  html += "function toggleMPR121(btn) {";
+  html += "  fetch('/toggle_mpr121')";
+  html += "  .then(response => response.json())";
+  html += "  .then(data => {";
+  html += "    if (data.enabled) {";
+  html += "      btn.className = 'btn btn-on';";
+  html += "      btn.innerHTML = '✅ Touch-Eingabe AKTIV';";
+  html += "    } else {";
+  html += "      btn.className = 'btn btn-off';";
+  html += "      btn.innerHTML = '⛔ Touch-Eingabe DEAKTIVIERT';";
+  html += "    }";
+  html += "  });";
+  html += "}";
+  html += "</script>";
   
   // LED Dimmer
   html += "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>";
@@ -1780,6 +1902,19 @@ void handleMQTT() {
   
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
+}
+
+// ===== MPR121 Touch Enable/Disable Toggle =====
+void handleToggleMPR121() {
+  mpr121Enabled = !mpr121Enabled;
+  saveMPR121State();
+  publishMPR121State();  // MQTT State publishen
+  
+  Serial.println("📱 MPR121 Touch-Eingabe " + String(mpr121Enabled ? "AKTIVIERT" : "DEAKTIVIERT"));
+  
+  // JSON Response für optimistic UI
+  String json = "{\"enabled\":" + String(mpr121Enabled ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
 }
 
 // ===== ESP32 Restart =====
