@@ -820,9 +820,8 @@ void publishRelayState(int relayIndex) {
   if (!mqttClient.connected() || !mqttConfig.enabled) return;
   if (relayIndex < 0 || relayIndex >= 24) return;
   
-  // Throttle: Max. 1 State-Update pro Sekunde
-  if (millis() - lastMQTTPublish < mqttPublishInterval) return;
-  lastMQTTPublish = millis();
+  // Kein Throttling mehr - sofortiges State-Update für korrekten Sync
+  // (MQTT retained messages sind effizient genug)
   
   String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(relayIndex) + "/state";
   String statePayload = relayState[relayIndex] ? "ON" : "OFF";
@@ -1328,6 +1327,8 @@ void loop() {
     pcaRel1.digitalWrite(0, LOW);
     pcaRel1.digitalWrite(1, LOW);
     fensterrolloTimer = 0;
+    publishRelayState(0);  // MQTT State publishen
+    publishRelayState(1);  // MQTT State publishen
   }
   if (tuerrolloTimer > 0 && millis() - tuerrolloTimer > (rolloActiveTime * 5)) {
     Serial.println("SICHERHEITS-STOPP Türrollo nach 5 Minuten");
@@ -1335,6 +1336,8 @@ void loop() {
     pcaRel1.digitalWrite(2, LOW);
     pcaRel1.digitalWrite(3, LOW);
     tuerrolloTimer = 0;
+    publishRelayState(2);  // MQTT State publishen
+    publishRelayState(3);  // MQTT State publishen
   }
 
   delay(10);  // Reduziert von 50ms → schnellere Reaktionszeit
@@ -2355,6 +2358,7 @@ void toggleFensterrolloUp() {
     pcaRel1.digitalWrite(0, LOW);  // AUS
     Serial.println("Fensterrollo STOPP (war hoch)");
     fensterrolloTimer = 0;
+    publishRelayState(0);  // MQTT State publishen
   } else {
     // Start hoch, runter stoppen
     relayState[0] = 1;
@@ -2363,6 +2367,8 @@ void toggleFensterrolloUp() {
     pcaRel1.digitalWrite(1, LOW);  // Runter AUS
     Serial.println("Fensterrollo START hoch");
     fensterrolloTimer = millis();
+    publishRelayState(0);  // MQTT State publishen (hoch)
+    publishRelayState(1);  // MQTT State publishen (runter)
   }
 }
 
@@ -2375,6 +2381,7 @@ void toggleFensterrolloDown() {
     pcaRel1.digitalWrite(1, LOW);  // AUS
     Serial.println("Fensterrollo STOPP (war runter)");
     fensterrolloTimer = 0;
+    publishRelayState(1);  // MQTT State publishen
   } else {
     // Start runter, hoch stoppen
     relayState[0] = 0;
@@ -2383,6 +2390,8 @@ void toggleFensterrolloDown() {
     pcaRel1.digitalWrite(1, HIGH);   // Runter EIN
     Serial.println("Fensterrollo START runter");
     fensterrolloTimer = millis();
+    publishRelayState(0);  // MQTT State publishen (hoch)
+    publishRelayState(1);  // MQTT State publishen (runter)
   }
 }
 
@@ -2395,6 +2404,7 @@ void toggleTuerrolloUp() {
     pcaRel1.digitalWrite(2, LOW);  // AUS
     Serial.println("Türrollo STOPP (war hoch)");
     tuerrolloTimer = 0;
+    publishRelayState(2);  // MQTT State publishen
   } else {
     // Start hoch, runter stoppen
     relayState[2] = 1;
@@ -2403,6 +2413,8 @@ void toggleTuerrolloUp() {
     pcaRel1.digitalWrite(3, LOW);  // Runter AUS
     Serial.println("Türrollo START hoch");
     tuerrolloTimer = millis();
+    publishRelayState(2);  // MQTT State publishen (hoch)
+    publishRelayState(3);  // MQTT State publishen (runter)
   }
 }
 
@@ -2415,6 +2427,7 @@ void toggleTuerrolloDown() {
     pcaRel1.digitalWrite(3, LOW);  // AUS
     Serial.println("Türrollo STOPP (war runter)");
     tuerrolloTimer = 0;
+    publishRelayState(3);  // MQTT State publishen
   } else {
     // Start runter, hoch stoppen
     relayState[2] = 0;
@@ -2423,6 +2436,8 @@ void toggleTuerrolloDown() {
     pcaRel1.digitalWrite(3, HIGH);   // Runter EIN
     Serial.println("Türrollo START runter");
     tuerrolloTimer = millis();
+    publishRelayState(2);  // MQTT State publishen (hoch)
+    publishRelayState(3);  // MQTT State publishen (runter)
   }
 }
 void toggleAussenlampeGarten() {
@@ -2431,6 +2446,7 @@ void toggleAussenlampeGarten() {
   int idx = 4;
   relayState[idx] = !relayState[idx];
   pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleSteinlampe() {
   // R05 (idx 5)
@@ -2438,6 +2454,7 @@ void toggleSteinlampe() {
   int idx = 5;
   relayState[idx] = !relayState[idx];
   pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleKGFlurlampe() {
   // R06 (idx 6)
@@ -2445,6 +2462,7 @@ void toggleKGFlurlampe() {
   int idx = 6;
   relayState[idx] = !relayState[idx];
   pcaRel1.digitalWrite(idx, relayState[idx] ? HIGH : LOW);
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleKuechenarbeitslampe() {
   // R07 (idx 7)
@@ -2452,6 +2470,7 @@ void toggleKuechenarbeitslampe() {
   int idx = 7;
   relayState[idx] = !relayState[idx];
   pcaRel1.digitalWrite(7, relayState[idx] ? HIGH : LOW);  // Board 1, Pin 7
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleKuechenlampe() {
   // R08 (idx 8)
@@ -2459,6 +2478,7 @@ void toggleKuechenlampe() {
   int idx = 8;
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(0, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 0
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleEGFlurlampe() {
   // R09 (idx 9)
@@ -2466,6 +2486,7 @@ void toggleEGFlurlampe() {
   int idx = 9;
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(1, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 1
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleTraegerlampen() {
   // R10 (idx 10)
@@ -2473,6 +2494,7 @@ void toggleTraegerlampen() {
   int idx = 10;
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(2, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 2
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleWohnzimmerlampe1() {
   // R11 (idx 11)
@@ -2480,6 +2502,7 @@ void toggleWohnzimmerlampe1() {
   int idx = 11;
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(3, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 3
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleWohnzimmerlampe2() {
   // R12 (idx 12)
@@ -2487,6 +2510,7 @@ void toggleWohnzimmerlampe2() {
   int idx = 12;
   relayState[idx] = !relayState[idx];
   pcaRel2.digitalWrite(4, relayState[idx] ? HIGH : LOW);  // Board 2, Pin 4
+  publishRelayState(idx);  // MQTT State publishen
 }
 void toggleLamps() {
   // Gruppe: R05, R07, R08, R09, R10, R11, R12 (idx 5,7,8,9,10,11,12)
@@ -2498,6 +2522,7 @@ void toggleLamps() {
     if (chip == 0) pcaRel1.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
     if (chip == 1) pcaRel2.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
     if (chip == 2) pcaRel3.digitalWrite(pin, relayState[idx] ? HIGH : LOW);
+    publishRelayState(idx);  // MQTT State publishen
   }
 }
 
