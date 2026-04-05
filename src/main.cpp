@@ -227,11 +227,12 @@ String relayNames[24] = {
 
 // Home Assistant Device-Typ & Enable-Status für jedes Relais
 // Typen: "none", "switch", "light", "cover", "fan"
+// ⚠️ R00-R03 werden durch Cover-Entities gesteuert (siehe coverRelayPairs unten)
 String relayHAType[24] = {
-  "cover",   // R00 - Fensterrollo hoch
-  "cover",   // R01 - Fensterrollo runter  
-  "cover",   // R02 - Türrollo hoch
-  "cover",   // R03 - Türrollo runter
+  "none",    // R00 - Fensterrollo hoch (durch Cover gesteuert)
+  "none",    // R01 - Fensterrollo runter (durch Cover gesteuert)
+  "none",    // R02 - Türrollo hoch (durch Cover gesteuert)
+  "none",    // R03 - Türrollo runter (durch Cover gesteuert)
   "light",   // R04 - Aussenlampe Garten
   "light",   // R05 - Steinlampe
   "light",   // R06 - KG Flurlampe
@@ -255,13 +256,34 @@ String relayHAType[24] = {
 };
 
 // HA Discovery Enable/Disable pro Relais
+// ⚠️ R00-R03 disabled, da diese durch Cover-Entities gesteuert werden
 bool relayHAEnabled[24] = {
-  true,  true,  true,  true,   // R00-R03: Rollos enabled
+  false, false, false, false,  // R00-R03: Durch Covers gesteuert
   true,  true,  true,  true,   // R04-R07: Lampen enabled
   true,  true,  true,  true,   // R08-R11: Lampen enabled  
   true,  false, false, false,  // R12-R15: R12 enabled, Rest disabled
   false, false, false, false,  // R16-R19: disabled
   false, false, false, false   // R20-R23: disabled
+};
+
+// ======================================================
+// COVER CONFIGURATION (Rollos/Jalousien) 
+// ======================================================
+// 2 virtuelle Cover-Devices, jedes steuert 2 physische Relais im Flip-Flop
+String coverNames[2] = {
+  "Fensterrollo",  // Cover 0: R00 (open) + R01 (close)
+  "Türrollo"       // Cover 1: R02 (open) + R03 (close)
+};
+
+bool coverHAEnabled[2] = {
+  true,  // Fensterrollo in HA anzeigen
+  true   // Türrollo in HA anzeigen
+};
+
+// Relay-Zuordnung: [cover_idx][0=open_relay, 1=close_relay]
+int coverRelayPairs[2][2] = {
+  {0, 1},  // Cover 0 "Fensterrollo": R00=hoch, R01=runter
+  {2, 3}   // Cover 1 "Türrollo": R02=hoch, R03=runter
 };
 
 Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
@@ -302,11 +324,15 @@ void mqttConnect();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishMQTTDiscovery();
 void publishRelayState(int relayIndex);
+void publishCoverState(int coverIndex);
 void publishMPR121State();
 void publishAllStates();
 void setRelayState(int relayIndex, int state);
+void setCoverState(int coverIndex, const char* action);  // OPEN, CLOSE, STOP
 void loadMPR121State();
 void saveMPR121State();
+void loadCoverConfig();
+void saveCoverConfig(int coverIndex, String name, bool enabled);
 
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
@@ -355,6 +381,10 @@ void handleClientDetail();
 void handleRemoveClient();
 void handleEdit();
 void handleSaveName();
+void handleSaveCover();
+void handleCover();
+void handleSaveCover();
+void handleCover();
 void handleMQTT();
 void handleSaveMQTT();
 void handleRestart();
@@ -457,6 +487,55 @@ void saveRelayHAConfig(int relayIndex, String type, bool enabled) {
   Serial.println("✅ R" + String(relayIndex) + " HA Config: Type=" + type + ", Enabled=" + String(enabled));
 }
 
+// ======================================================
+// COVER CONFIG LADEN/SPEICHERN (NVRAM Preferences)
+// ======================================================
+void loadCoverConfig() {
+  preferences.begin("cover-config", true); // Read-only Modus
+  
+  for (int i = 0; i < 2; i++) {
+    String keyName = "cname_" + String(i);
+    String keyEnabled = "cen_" + String(i);
+    
+    // Name laden (falls gespeichert, sonst Default behalten)
+    String savedName = preferences.getString(keyName.c_str(), "");
+    if (savedName.length() > 0) {
+      coverNames[i] = savedName;
+    }
+    
+    // Enabled laden
+    if (preferences.isKey(keyEnabled.c_str())) {
+      coverHAEnabled[i] = preferences.getBool(keyEnabled.c_str(), true);
+    }
+  }
+  
+  preferences.end();
+  Serial.println("✅ Cover-Konfiguration geladen\n");
+}
+
+void saveCoverConfig(int coverIndex, String name, bool enabled) {
+  if (coverIndex < 0 || coverIndex >= 2) {
+    Serial.println("❌ Ungültiger Cover Index: " + String(coverIndex));
+    return;
+  }
+  
+  preferences.begin("cover-config", false); // Read-Write Modus
+  
+  String keyName = "cname_" + String(coverIndex);
+  String keyEnabled = "cen_" + String(coverIndex);
+  
+  preferences.putString(keyName.c_str(), name);
+  preferences.putBool(keyEnabled.c_str(), enabled);
+  
+  preferences.end();
+  
+  // Arrays aktualisieren
+  coverNames[coverIndex] = name;
+  coverHAEnabled[coverIndex] = enabled;
+  
+  Serial.println("✅ Cover " + String(coverIndex) + " Config: Name=" + name + ", Enabled=" + String(enabled));
+}
+
 void saveRelayName(int relayIndex, String newName) {
   if (relayIndex < 0 || relayIndex >= 24) {
     Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
@@ -536,8 +615,32 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print(" = ");
   Serial.println(message);
   
-  // Command Topics parsen: wt32kg/relay/XX/set
+  // ======================================================
+  // COVER COMMAND TOPIC: wt32kg/cover/X/set
+  // ======================================================
   String topicStr = String(topic);
+  if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/cover/")) {
+    // Cover-Index extrahieren
+    int startIdx = String(MQTT_BASE_TOPIC).length() + 7;  // "/cover/"
+    int endIdx = topicStr.indexOf("/set");
+    if (endIdx == -1) return;
+    
+    String coverNumStr = topicStr.substring(startIdx, endIdx);
+    int coverIndex = coverNumStr.toInt();
+    
+    if (coverIndex < 0 || coverIndex >= 2) return;
+    
+    // Command verarbeiten (OPEN, CLOSE, STOP)
+    String cmd = String(message);
+    cmd.toUpperCase();
+    
+    setCoverState(coverIndex, cmd.c_str());
+    return;
+  }
+  
+  // ======================================================
+  // RELAY COMMAND TOPICS: wt32kg/relay/XX/set
+  // ======================================================
   if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/relay/")) {
     // Relay-Index extrahieren
     int startIdx = String(MQTT_BASE_TOPIC).length() + 7;  // "/relay/"
@@ -549,57 +652,27 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     
     if (relayIndex < 0 || relayIndex >= 24) return;
     
-    // Command verarbeiten
+    // ⚠️ R00-R03 werden über Cover-Commands gesteuert, nicht über Relay-Commands
+    if (relayIndex >= 0 && relayIndex <= 3) {
+      Serial.println("⚠️ R" + String(relayIndex) + " wird über Cover-Devices gesteuert");
+      return;
+    }
+    
+    // Command verarbeiten (nur für R04-R23)
     String cmd = String(message);
     cmd.toUpperCase();
     
     if (cmd == "ON") {
-      // Relay einschalten (wenn nicht bereits an)
-      if (relayState[relayIndex] == 0) {
-        // Rufe die entsprechende Toggle-Funktion auf
-        // Simuliere einen Web-Toggle
-        if (relayIndex == 0) toggleFensterrolloUp();
-        else if (relayIndex == 1) toggleFensterrolloDown();
-        else if (relayIndex == 2) toggleTuerrolloUp();
-        else if (relayIndex == 3) toggleTuerrolloDown();
-        else {
-          // Normale Relais 4-23
-          setRelayState(relayIndex, 1);
-        }
-      }
+      setRelayState(relayIndex, 1);
     } else if (cmd == "OFF") {
-      // Relay ausschalten (wenn nicht bereits aus)
-      if (relayState[relayIndex] == 1) {
-        if (relayIndex == 0) toggleFensterrolloUp();
-        else if (relayIndex == 1) toggleFensterrolloDown();
-        else if (relayIndex == 2) toggleTuerrolloUp();
-        else if (relayIndex == 3) toggleTuerrolloDown();
-        else {
-          setRelayState(relayIndex, 0);
-        }
-      }
-    } else if (cmd == "STOP") {
-      // STOP Command für Cover-Devices
-      // Stoppe Fensterrollo (R00 + R01)
-      if (relayIndex == 0 || relayIndex == 1) {
-        setRelayState(0, 0);  // Fenster hoch stoppen
-        setRelayState(1, 0);  // Fenster runter stoppen
-        Serial.println("⏹️ Fensterrollo STOPP via MQTT");
-      }
-      // Stoppe Türrollo (R02 + R03)
-      else if (relayIndex == 2 || relayIndex == 3) {
-        setRelayState(2, 0);  // Tür hoch stoppen
-        setRelayState(3, 0);  // Tür runter stoppen
-        Serial.println("⏹️ Türrollo STOPP via MQTT");
-      }
-      // Für andere Relais: ausschalten
-      else {
-        setRelayState(relayIndex, 0);
-      }
+      setRelayState(relayIndex, 0);
     }
+    return;
   }
   
-  // MPR121 Command Topic: wt32kg/mpr121/set
+  // ======================================================
+  // MPR121 COMMAND TOPIC: wt32kg/mpr121/set
+  // ======================================================
   if (topicStr == String(MQTT_BASE_TOPIC) + "/mpr121/set") {
     String cmd = String(message);
     cmd.toUpperCase();
@@ -643,10 +716,16 @@ void mqttConnect() {
   if (connected) {
     Serial.println("✅ MQTT verbunden!");
     
-    // Subscribe zu allen Command-Topics
+    // Subscribe zu allen Relay Command-Topics (R00-R23, aber R00-R03 durch Cover gesteuert)
     for (int i = 0; i < 24; i++) {
       String cmdTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       mqttClient.subscribe(cmdTopic.c_str());
+    }
+    
+    // Subscribe zu Cover Command Topics
+    for (int i = 0; i < 2; i++) {
+      String coverCmdTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set";
+      mqttClient.subscribe(coverCmdTopic.c_str());
     }
     
     // Subscribe zu MPR121 Command Topic
@@ -813,6 +892,43 @@ void publishMQTTDiscovery() {
   mqttClient.publish(mpr121DiscoveryTopic.c_str(), mpr121Payload.c_str(), true);
   Serial.println("  ✅ MPR121 Touch Enable Switch: " + mpr121Name);
   
+  // ======================================================
+  // COVER DISCOVERY (Virtuelle Cover-Devices)
+  // ======================================================
+  for (int i = 0; i < 2; i++) {
+    if (!coverHAEnabled[i]) {
+      Serial.println("  ⏭️ Cover " + String(i) + " übersprungen (deaktiviert)");
+      continue;
+    }
+    
+    String coverDeviceId = "wt32kg_cover_" + String(i);
+    String coverName = coverNames[i];
+    String coverObjectId = "cover_" + String(i);
+    
+    String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/cover/" + coverDeviceId + "/config";
+    String stateTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/state";
+    String commandTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set";
+    
+    String payload = "{";
+    payload += "\"name\":\"" + coverName + "\",";
+    payload += "\"unique_id\":\"" + coverDeviceId + "\",";
+    payload += "\"object_id\":\"" + coverObjectId + "\",";
+    payload += "\"command_topic\":\"" + commandTopic + "\",";
+    payload += "\"state_topic\":\"" + stateTopic + "\",";
+    payload += "\"payload_open\":\"OPEN\",";
+    payload += "\"payload_close\":\"CLOSE\",";
+    payload += "\"payload_stop\":\"STOP\",";
+    payload += "\"state_opening\":\"opening\",";
+    payload += "\"state_closing\":\"closing\",";
+    payload += "\"state_stopped\":\"stopped\",";
+    payload += "\"device_class\":\"blind\",";
+    payload += deviceInfo + "}";
+    
+    mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+    Serial.println("  ✅ Cover " + String(i) + ": " + coverName + " (Cover Device)");
+    delay(50);
+  }
+  
   Serial.println("📡 Discovery abgeschlossen!");
 }
 
@@ -838,6 +954,28 @@ void publishMPR121State() {
   mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
 }
 
+void publishCoverState(int coverIndex) {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  if (coverIndex < 0 || coverIndex >= 2) return;
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(coverIndex) + "/state";
+  
+  // State ermitteln aus den beiden Relais
+  int openRelay = coverRelayPairs[coverIndex][0];
+  int closeRelay = coverRelayPairs[coverIndex][1];
+  
+  String statePayload;
+  if (relayState[openRelay] == 1 && relayState[closeRelay] == 0) {
+    statePayload = "opening";  // Fährt hoch/öffnet
+  } else if (relayState[openRelay] == 0 && relayState[closeRelay] == 1) {
+    statePayload = "closing";  // Fährt runter/schließt
+  } else {
+    statePayload = "stopped";   // Beide aus oder beide an (Fehlerfall)
+  }
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
+}
+
 void publishAllStates() {
   if (!mqttClient.connected() || !mqttConfig.enabled) return;
   
@@ -846,6 +984,12 @@ void publishAllStates() {
     String statePayload = relayState[i] ? "ON" : "OFF";
     mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
     delay(20);  // Kleine Verzögerung
+  }
+  
+  // Cover States publishen
+  for (int i = 0; i < 2; i++) {
+    publishCoverState(i);
+    delay(20);
   }
   
   // MPR121 State publishen
@@ -1164,6 +1308,8 @@ void setup() {
   server.on("/led", handleLEDDimmer);
   server.on("/kronleuchter", handleACDimmer);
   server.on("/savename", handleSaveName);
+  server.on("/savecover", handleSaveCover);
+  server.on("/cover", handleCover);
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
   server.on("/restart", handleRestart);
@@ -1178,6 +1324,9 @@ void setup() {
   
   // HA Device-Konfiguration laden
   loadRelayHAConfig();
+  
+  // Cover-Konfiguration laden
+  loadCoverConfig();
   
   // MPR121 State laden
   loadMPR121State();
@@ -1329,6 +1478,7 @@ void loop() {
     fensterrolloTimer = 0;
     publishRelayState(0);  // MQTT State publishen
     publishRelayState(1);  // MQTT State publishen
+    publishCoverState(0);  // Cover-State aktualisieren
   }
   if (tuerrolloTimer > 0 && millis() - tuerrolloTimer > (rolloActiveTime * 5)) {
     Serial.println("SICHERHEITS-STOPP Türrollo nach 5 Minuten");
@@ -1338,6 +1488,7 @@ void loop() {
     tuerrolloTimer = 0;
     publishRelayState(2);  // MQTT State publishen
     publishRelayState(3);  // MQTT State publishen
+    publishCoverState(1);  // Cover-State aktualisieren
   }
 
   delay(10);  // Reduziert von 50ms → schnellere Reaktionszeit
@@ -1530,6 +1681,21 @@ String getHTMLHeader(String activeTab) {
   html += "});";
   html += "}";
   html += "setInterval(updateInputs,500);";  // Update alle 500ms
+  
+  // JavaScript für Cover-Steuerung (OPEN/CLOSE/STOP)
+  html += "function coverAction(coverIndex, action, btnElement) {";
+  html += "  console.log('Cover ' + coverIndex + ' Action: ' + action);";
+  html += "  fetch('/cover?idx=' + coverIndex + '&action=' + action)";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    console.log('Cover response:', data);";
+  html += "    location.reload();";
+  html += "  })";
+  html += "  .catch(function(error) {";
+  html += "    console.error('Cover error:', error);";
+  html += "  });";
+  html += "}";
+  
   html += "</script>";
   
   html += "</head><body>";
@@ -1607,7 +1773,6 @@ void handleHome() {
   // AC Dimmer (unabhängig von R11)
   html += "<h3>💡 AC Dimmer (GPIO2 - YYAC-3S)</h3>";
   html += "<div class='card'>";
-  html += "<p style='font-size:11px;color:#aaa;margin:0 0 10px 0;'>⚠️ Unabhängig von R11 (Kronleuchter Relais). Dimmer steuert nur PWM.</p>";
   int acPercent = (acDimmerBrightness * 100) / 255;
   html += "<div style='margin:20px 0;'>";
   html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(acPercent) + "%</b></label><br>";
@@ -1625,48 +1790,74 @@ void handleHome() {
   html += "}";
   html += "</script>";
 
-  // Rollläden
+  // Cover-Devices (Rollläden)
   html += "<h3>🪟 Rollläden</h3>";
   html += "<div class='card'>";
   
-  // Fensterrollo
-  html += "<div class='rollo-group'>";
-  html += "<span class='rollo-label'>Fensterrollo:</span>";
+  // Cover 0: Fensterrollo (R00+R01)
+  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
+  html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</div>";
   
-  // Dynamische Button-Symbole je nach Status
-  String fensterHochSymbol = (relayState[0] == 1) ? "⏹️ Stopp (R00)" : "▲ Hoch (R00)";
-  String fensterRunterSymbol = (relayState[1] == 1) ? "⏹️ Stopp (R01)" : "▼ Runter (R01)";
-  String fensterHochClass = (relayState[0] == 1) ? "btn-neutral" : "btn-rollo";
-  String fensterRunterClass = (relayState[1] == 1) ? "btn-neutral" : "btn-rollo";
+  // 3 Buttons: OPEN, CLOSE, STOP
+  html += "<div style='display:flex;gap:10px;margin-bottom:10px;'>";
   
-  html += "<button onclick='toggleRelay(0,this)' class='btn " + fensterHochClass + "'>" + fensterHochSymbol + "</button>";
-  html += "<button onclick='toggleRelay(1,this)' class='btn " + fensterRunterClass + "'>" + fensterRunterSymbol + "</button>";
+  // OPEN Button
+  bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
+  String openClass = cover0Opening ? "btn-on" : "btn-rollo";
+  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;'>";
+  html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
+  html += "</button>";
   
-  String fensterStatus = "";
-  if (relayState[0] == 1) fensterStatus = " (Fährt hoch)";
-  else if (relayState[1] == 1) fensterStatus = " (Fährt runter)";
-  else fensterStatus = " (Stopp)";
-  html += "<span class='rollo-status' id='fenster-status'>" + fensterStatus + "</span>";
+  // STOP Button
+  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;'>⏹️ Stopp</button>";
+  
+  // CLOSE Button
+  bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
+  String closeClass = cover0Closing ? "btn-on" : "btn-rollo";
+  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;'>";
+  html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
+  html += "</button>";
+  
   html += "</div>";
   
-  // Türrollo  
-  html += "<div class='rollo-group'>";
-  html += "<span class='rollo-label'>Türrollo:</span>";
+  // Status-Anzeige
+  String cover0Status = "Gestoppt";
+  if (cover0Opening) cover0Status = "Fährt hoch";
+  else if (cover0Closing) cover0Status = "Fährt runter";
+  html += "<div style='font-size:11px;color:#aaa;text-align:center;' id='cover0-status'>Status: " + cover0Status + "</div>";
+  html += "</div>";
   
-  // Dynamische Button-Symbole je nach Status
-  String tuerHochSymbol = (relayState[2] == 1) ? "⏹️ Stopp (R02)" : "▲ Hoch (R02)";
-  String tuerRunterSymbol = (relayState[3] == 1) ? "⏹️ Stopp (R03)" : "▼ Runter (R03)";
-  String tuerHochClass = (relayState[2] == 1) ? "btn-neutral" : "btn-rollo";
-  String tuerRunterClass = (relayState[3] == 1) ? "btn-neutral" : "btn-rollo";
+  // Cover 1: Türrollo (R02+R03)
+  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
+  html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</div>";
   
-  html += "<button onclick='toggleRelay(2,this)' class='btn " + tuerHochClass + "'>" + tuerHochSymbol + "</button>";
-  html += "<button onclick='toggleRelay(3,this)' class='btn " + tuerRunterClass + "'>" + tuerRunterSymbol + "</button>";
+  // 3 Buttons: OPEN, CLOSE, STOP
+  html += "<div style='display:flex;gap:10px;margin-bottom:10px;'>";
   
-  String tuerStatus = "";
-  if (relayState[2] == 1) tuerStatus = " (Fährt hoch)";
-  else if (relayState[3] == 1) tuerStatus = " (Fährt runter)";
-  else tuerStatus = " (Stopp)";
-  html += "<span class='rollo-status' id='tuer-status'>" + tuerStatus + "</span>";
+  // OPEN Button
+  bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
+  String openClass1 = cover1Opening ? "btn-on" : "btn-rollo";
+  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;'>";
+  html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
+  html += "</button>";
+  
+  // STOP Button
+  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;'>⏹️ Stopp</button>";
+  
+  // CLOSE Button
+  bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
+  String closeClass1 = cover1Closing ? "btn-on" : "btn-rollo";
+  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;'>";
+  html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
+  html += "</button>";
+  
+  html += "</div>";
+  
+  // Status-Anzeige
+  String cover1Status = "Gestoppt";
+  if (cover1Opening) cover1Status = "Fährt hoch";
+  else if (cover1Closing) cover1Status = "Fährt runter";
+  html += "<div style='font-size:11px;color:#aaa;text-align:center;' id='cover1-status'>Status: " + cover1Status + "</div>";
   html += "</div>";
   
   html += "</div>";
@@ -1919,15 +2110,57 @@ void handleRemoveClient() {
 void handleEdit() {
   String html = getHTMLHeader("edit");
   
-  html += "<h3>✏️ Relay-Namen & Home Assistant Konfiguration</h3>";
+  html += "<h3>✏️ Cover & Relay Konfiguration</h3>";
   html += "<div class='card'>";
   html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>";
-  html += "Namen, Device-Typ und HA-Status werden permanent im NVRAM gespeichert.<br>";
-  html += "💡 <b>Cover</b> = Rollläden/Jalousien | <b>Light</b> = Lampen | <b>Switch</b> = Schalter";
+  html += "Namen und HA-Status werden permanent im NVRAM gespeichert.<br>";
+  html += "💡 <b>Cover</b> = virtuelle Rollläden (steuern je 2 physische Relais) | <b>Light</b> = Lampen | <b>Switch</b> = Schalter";
   html += "</p>";
   
-  // Formular für alle 24 Relais
-  for (int i = 0; i < 24; i++) {
+  // ======================================================
+  // COVER-EINTRÄGE (2 virtuelle Cover-Devices)
+  // ======================================================
+  html += "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>";
+  
+  for (int i = 0; i < 2; i++) {
+    String coverNum = "Cover " + String(i);
+    String relayPair = (i == 0) ? "(R00+R01)" : "(R02+R03)";
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
+    
+    // Erste Zeile: Cover-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>";
+    html += "<input type='text' id='covername" + String(i) + "' value='" + coverNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "</div>";
+    
+    // Zweite Zeile: HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = coverHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='coverenabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='coverenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
+    html += "</div>";
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveCoverConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close cover card
+  }
+  
+  // ======================================================
+  // RELAY-EINTRÄGE (R04-R23, 20 Relais)
+  // ======================================================
+  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>💡 Relay-Devices (R04-R23)</h4>";
+  
+  // Formular für R04-R23 (20 Relais)
+  for (int i = 4; i < 24; i++) {
     String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
     
     html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>";
@@ -1979,8 +2212,32 @@ void handleEdit() {
   
   html += "</div>";
   
-  // JavaScript für Save-Funktion
+  // JavaScript für Save-Funktionen
   html += "<script>";
+  
+  // Cover Config speichern
+  html += "function saveCoverConfig(coverIndex) {";
+  html += "  var name = document.getElementById('covername' + coverIndex).value.trim();";
+  html += "  var enabled = document.getElementById('coverenabled' + coverIndex).checked ? '1' : '0';";
+  html += "  if (name === '') {";
+  html += "    alert('Name darf nicht leer sein!');";
+  html += "    return;";
+  html += "  }";
+  html += "  fetch('/savecover?cover=' + coverIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    if (data.success) {";
+  html += "      alert('✅ Cover-Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
+  html += "    } else {";
+  html += "      alert('❌ Fehler beim Speichern');";
+  html += "    }";
+  html += "  })";
+  html += "  .catch(function(error) {";
+  html += "    alert('❌ Fehler: ' + error);";
+  html += "  });";
+  html += "}";
+  
+  // Relay Config speichern
   html += "function saveConfig(relayIndex) {";
   html += "  var name = document.getElementById('name' + relayIndex).value.trim();";
   html += "  var type = document.getElementById('type' + relayIndex).value;";
@@ -2050,6 +2307,80 @@ void handleSaveName() {
   
   // Erfolg zurückmelden
   String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
+}
+
+// ===== API-Handler zum Speichern der Cover-Config =====
+void handleSaveCover() {
+  if (!server.hasArg("cover") || !server.hasArg("name")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+  
+  int coverIndex = server.arg("cover").toInt();
+  String newName = server.arg("name");
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
+  
+  // Validierung
+  if (coverIndex < 0 || coverIndex >= 2) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid cover index\"}");
+    return;
+  }
+  
+  if (newName.length() == 0 || newName.length() > 30) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
+    return;
+  }
+  
+  // Cover-Config speichern
+  saveCoverConfig(coverIndex, newName, newEnabled);
+  
+  // MQTT Discovery neu senden (falls MQTT aktiv)
+  if (mqttConfig.enabled && mqttClient.connected()) {
+    Serial.println("🔄 MQTT Discovery wird neu gesendet...");
+    publishMQTTDiscovery();
+  }
+  
+  // Erfolg zurückmelden
+  String json = "{\"success\":true,\"cover\":" + String(coverIndex) + ",\"name\":\"" + newName + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
+}
+
+// ===== API-Handler für Cover-Actions (OPEN/CLOSE/STOP) =====
+void handleCover() {
+  if (!server.hasArg("idx") || !server.hasArg("action")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+  
+  int coverIndex = server.arg("idx").toInt();
+  String action = server.arg("action");
+  action.toUpperCase();
+  
+  // Validierung
+  if (coverIndex < 0 || coverIndex >= 2) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid cover index\"}");
+    return;
+  }
+  
+  if (action != "OPEN" && action != "CLOSE" && action != "STOP") {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid action\"}");
+    return;
+  }
+  
+  // Cover-Action ausführen
+  setCoverState(coverIndex, action.c_str());
+  
+  // Response mit aktuellem Status
+  int openRelay = coverRelayPairs[coverIndex][0];
+  int closeRelay = coverRelayPairs[coverIndex][1];
+  
+  String json = "{\"success\":true,";
+  json += "\"cover\":" + String(coverIndex) + ",";
+  json += "\"action\":\"" + action + "\",";
+  json += "\"openRelay\":" + String(relayState[openRelay]) + ",";
+  json += "\"closeRelay\":" + String(relayState[closeRelay]) + "}";
+  
   server.send(200, "application/json", json);
 }
 
@@ -2269,6 +2600,42 @@ void setRelayState(int relayIndex, int state) {
   Serial.println(state ? "EIN" : "AUS");
 }
 
+// ======================================================
+// COVER STATE SETZEN (OPEN/CLOSE/STOP)
+// ======================================================
+void setCoverState(int coverIndex, const char* action) {
+  if (coverIndex < 0 || coverIndex >= 2) return;
+  
+  int openRelay = coverRelayPairs[coverIndex][0];
+  int closeRelay = coverRelayPairs[coverIndex][1];
+  
+  Serial.print("🔧 setCoverState() Cover ");
+  Serial.print(coverIndex);
+  Serial.print(" (");
+  Serial.print(coverNames[coverIndex]);
+  Serial.print(") → ");
+  Serial.println(action);
+  
+  if (strcmp(action, "OPEN") == 0) {
+    // Hoch fahren: Open-Relay EIN, Close-Relay AUS
+    setRelayState(openRelay, 1);
+    setRelayState(closeRelay, 0);
+  } 
+  else if (strcmp(action, "CLOSE") == 0) {
+    // Runter fahren: Open-Relay AUS, Close-Relay EIN
+    setRelayState(openRelay, 0);
+    setRelayState(closeRelay, 1);
+  } 
+  else if (strcmp(action, "STOP") == 0) {
+    // Stopp: Beide Relais AUS
+    setRelayState(openRelay, 0);
+    setRelayState(closeRelay, 0);
+  }
+  
+  // Cover State publishen
+  publishCoverState(coverIndex);
+}
+
 void handleToggle() {
   int idx = server.arg("r").toInt();
   Serial.print("🔧 handleToggle() called - Index: ");
@@ -2370,6 +2737,7 @@ void toggleFensterrolloUp() {
     publishRelayState(0);  // MQTT State publishen (hoch)
     publishRelayState(1);  // MQTT State publishen (runter)
   }
+  publishCoverState(0);  // Cover-State aktualisieren
 }
 
 void toggleFensterrolloDown() {
@@ -2393,6 +2761,7 @@ void toggleFensterrolloDown() {
     publishRelayState(0);  // MQTT State publishen (hoch)
     publishRelayState(1);  // MQTT State publishen (runter)
   }
+  publishCoverState(0);  // Cover-State aktualisieren
 }
 
 void toggleTuerrolloUp() {
@@ -2416,6 +2785,7 @@ void toggleTuerrolloUp() {
     publishRelayState(2);  // MQTT State publishen (hoch)
     publishRelayState(3);  // MQTT State publishen (runter)
   }
+  publishCoverState(1);  // Cover-State aktualisieren
 }
 
 void toggleTuerrolloDown() {
@@ -2439,6 +2809,7 @@ void toggleTuerrolloDown() {
     publishRelayState(2);  // MQTT State publishen (hoch)
     publishRelayState(3);  // MQTT State publishen (runter)
   }
+  publishCoverState(1);  // Cover-State aktualisieren
 }
 void toggleAussenlampeGarten() {
   // R04 (idx 4)
