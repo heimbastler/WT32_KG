@@ -1026,6 +1026,9 @@ void publishMQTTDiscovery() {
     payload += "\"state_opening\":\"opening\",";
     payload += "\"state_closing\":\"closing\",";
     payload += "\"state_stopped\":\"stopped\",";
+    payload += "\"state_open\":\"open\",";
+    payload += "\"state_closed\":\"closed\",";
+    payload += "\"optimistic\":false,";
     payload += "\"device_class\":\"blind\",";
     payload += deviceInfo + "}";
     
@@ -1919,9 +1922,9 @@ void handleHome() {
   
   // MPR121 Touch Enable/Disable
   html += "<h3>📱 Touch-Eingabe (MPR121)</h3>";
-  html += "<div style='margin:15px 0;'>";
+  html += "<div class='card'>";
   String mpr121BtnClass = mpr121Enabled ? "btn-on" : "btn-off";
-  String mpr121BtnText = mpr121Enabled ? "✅ Touch-Eingabe AKTIV" : "⛔ Touch-Eingabe DEAKTIVIERT";
+  String mpr121BtnText = mpr121Enabled ? "🔵 Aktuell AKTIV - Klicken zum Deaktivieren" : "🔴 Aktuell DEAKTIVIERT - Klicken zum Aktivieren";
   html += "<button onclick='toggleMPR121(this)' class='btn " + mpr121BtnClass + "' style='min-width:280px;'>" + mpr121BtnText + "</button>";
   html += "<p style='font-size:11px;color:#aaa;margin:10px 0 0 0;'>";
   html += "🎯 Aktiviert/Deaktiviert die Auswertung der 3× MPR121 Touch-Sensoren<br>";
@@ -1936,10 +1939,10 @@ void handleHome() {
   html += "  .then(data => {";
   html += "    if (data.enabled) {";
   html += "      btn.className = 'btn btn-on';";
-  html += "      btn.innerHTML = '✅ Touch-Eingabe AKTIV';";
+  html += "      btn.innerHTML = '🔵 Aktuell AKTIV - Klicken zum Deaktivieren';";
   html += "    } else {";
   html += "      btn.className = 'btn btn-off';";
-  html += "      btn.innerHTML = '⛔ Touch-Eingabe DEAKTIVIERT';";
+  html += "      btn.innerHTML = '🔴 Aktuell DEAKTIVIERT - Klicken zum Aktivieren';";
   html += "    }";
   html += "  });";
   html += "}";
@@ -1947,6 +1950,7 @@ void handleHome() {
   
   // LED Dimmer
   html += "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>";
+  html += "<div class='card'>";
   int brightnessPercent = (ledDimmerBrightness * 100) / 255;
   html += "<div style='margin:20px 0;'>";
   html += "<label for='ledSlider'>Helligkeit: <b>" + String(brightnessPercent) + "%</b></label><br>";
@@ -1955,6 +1959,7 @@ void handleHome() {
   html += "<span style='font-size:12px;'>0%</span>";
   html += "<span style='float:right;font-size:12px;'>100%</span>";
   html += "</div>";
+  html += "</div>";  // Close card
   
   html += "<script>";
   html += "function updateLED(value) {";
@@ -1992,22 +1997,22 @@ void handleHome() {
   html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
-  html += "<div style='display:flex;gap:10px;margin-bottom:10px;'>";
+  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
   
   // OPEN Button
   bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
   String openClass = cover0Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;'>";
+  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:120px;'>";
   html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
   String closeClass = cover0Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;'>";
+  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:120px;'>";
   html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
@@ -2025,22 +2030,22 @@ void handleHome() {
   html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
-  html += "<div style='display:flex;gap:10px;margin-bottom:10px;'>";
+  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
   
   // OPEN Button
   bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
   String openClass1 = cover1Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;'>";
+  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:120px;'>";
   html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
   String closeClass1 = cover1Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;'>";
+  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:120px;'>";
   html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
@@ -2135,11 +2140,11 @@ void handleInfo() {
   // System-Informationen
   html += "<h3>💾 System</h3>";
   html += "<table>";
-  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
-  html += "<tr><td>Chip Modell</td><td>ESP32 WT32-ETH01</td></tr>";
-  html += "<tr><td>Uptime</td><td>" + String(millis() / 1000) + " Sekunden</td></tr>";
-  html += "<tr><td>Freier Heap</td><td>" + String(ESP.getFreeHeap() / 1024.0, 2) + " KB</td></tr>";
-  html += "<tr><td>Firmware</td><td>WT32-KG Controller v1.0</td></tr>";
+  html += "<tr><th style='text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
+  html += "<tr><td style='text-align:left;'>Chip Modell</td><td style='text-align:left;'>ESP32 WT32-ETH01</td></tr>";
+  html += "<tr><td style='text-align:left;'>Uptime</td><td style='text-align:left;'>" + String(millis() / 1000) + " Sekunden</td></tr>";
+  html += "<tr><td style='text-align:left;'>Freier Heap</td><td style='text-align:left;'>" + String(ESP.getFreeHeap() / 1024.0, 2) + " KB</td></tr>";
+  html += "<tr><td style='text-align:left;'>Firmware</td><td style='text-align:left;'>WT32-KG Controller v1.0</td></tr>";
   html += "</table>";
   
   // Restart Button
@@ -2769,7 +2774,7 @@ void handleMQTT() {
   html += "<p style='margin:5px 0;font-size:11px;'><b>📌 Home Assistant Integration:</b></p>";
   html += "<p style='margin:5px 0;font-size:11px;'>• Base Topic: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_BASE_TOPIC) + "</code></p>";
   html += "<p style='margin:5px 0;font-size:11px;'>• Discovery Prefix: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_DISCOVERY_PREFIX) + "</code></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Entities: 24 Switches (R00-R23)</p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Entities: 20 Lights/Switches (R04-R23), 2 Covers, 16 Binary Sensors, 1 Switch (MPR121)</p>";
   html += "<p style='margin:5px 0;font-size:11px;'>• Auto-Discovery beim Boot</p>";
   html += "</div>";
   
@@ -3382,13 +3387,13 @@ String getTemperatureHTML() {
   html += "<td>DS18B20 Sensor (GPIO4)</td>";
   
   if (schaltschrankTemp != -999.0) {
-    String tempColor = "black";
-    if (schaltschrankTemp < 10) tempColor = "blue";
-    else if (schaltschrankTemp > 35) tempColor = "red";
-    else if (schaltschrankTemp > 30) tempColor = "orange";
+    String tempColor = "#fff";
+    if (schaltschrankTemp < 10) tempColor = "#2196F3";
+    else if (schaltschrankTemp > 35) tempColor = "#f44336";
+    else if (schaltschrankTemp > 30) tempColor = "#ff9800";
     
     html += "<td style='color:" + tempColor + ";font-weight:bold;'>" + String(schaltschrankTemp, 1) + " °C</td>";
-    html += "<td style='color:green;'>✓ OK</td>";
+    html += "<td style='color:#4caf50;'>✓ OK</td>";
   } else {
     html += "<td style='color:gray;'>-- °C</td>";
     html += "<td style='color:red;'>✗ Fehler</td>";
