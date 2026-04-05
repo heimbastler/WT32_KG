@@ -289,6 +289,50 @@ int coverRelayPairs[2][2] = {
 Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
 
 // ======================================================
+// INPUT CONFIGURATION (MCP23017 Binary Sensors)
+// ======================================================
+// 16 digitale Eingänge vom MCP23017
+String inputNames[16] = {
+  "IR-Küche Links",    // IN00
+  "IR-Küche Rechts",   // IN01
+  "Kreuz EG1",         // IN02
+  "Kreuz EG2",         // IN03
+  "Kreuz KG1",         // IN04
+  "Kreuz KG2",         // IN05
+  "Kreuz KG3",         // IN06
+  "Frei",              // IN07
+  "Frei",              // IN08
+  "Frei",              // IN09
+  "Frei",              // IN10
+  "Frei",              // IN11
+  "Frei",              // IN12
+  "Frei",              // IN13
+  "Frei",              // IN14
+  "Frei"               // IN15
+};
+
+// HA Device Class für Binary Sensors
+// Typen: "none", "door", "window", "motion", "occupancy", "opening", "garage_door", "switch"
+String inputHAType[16] = {
+  "switch",  // IN00 - IR-Küche Links
+  "switch",  // IN01 - IR-Küche Rechts
+  "switch",  // IN02 - Kreuz EG1
+  "switch",  // IN03 - Kreuz EG2
+  "switch",  // IN04 - Kreuz KG1
+  "switch",  // IN05 - Kreuz KG2
+  "switch",  // IN06 - Kreuz KG3
+  "none",    // IN07-IN15: Frei
+  "none", "none", "none", "none", "none", "none", "none", "none"
+};
+
+bool inputHAEnabled[16] = {
+  true,  true,  true,  true,   // IN00-IN03: Küche + EG Kreuzschaltungen
+  true,  true,  true,  false,  // IN04-IN07: KG Kreuzschaltungen + 1 Frei
+  false, false, false, false,  // IN08-IN11: Frei
+  false, false, false, false   // IN12-IN15: Frei
+};
+
+// ======================================================
 // MQTT CONFIGURATION & CLIENT
 // ======================================================
 struct MQTTConfig {
@@ -327,12 +371,15 @@ void publishRelayState(int relayIndex);
 void publishCoverState(int coverIndex);
 void publishMPR121State();
 void publishAllStates();
+void publishInputState(int inputIndex);
 void setRelayState(int relayIndex, int state);
 void setCoverState(int coverIndex, const char* action);  // OPEN, CLOSE, STOP
 void loadMPR121State();
 void saveMPR121State();
 void loadCoverConfig();
 void saveCoverConfig(int coverIndex, String name, bool enabled);
+void loadInputConfig();
+void saveInputConfig(int inputIndex, String name, String type, bool enabled);
 
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
@@ -383,8 +430,7 @@ void handleEdit();
 void handleSaveName();
 void handleSaveCover();
 void handleCover();
-void handleSaveCover();
-void handleCover();
+void handleSaveInput();
 void handleMQTT();
 void handleSaveMQTT();
 void handleRestart();
@@ -534,6 +580,65 @@ void saveCoverConfig(int coverIndex, String name, bool enabled) {
   coverHAEnabled[coverIndex] = enabled;
   
   Serial.println("✅ Cover " + String(coverIndex) + " Config: Name=" + name + ", Enabled=" + String(enabled));
+}
+
+// ======================================================
+// INPUT CONFIG LADEN/SPEICHERN (NVRAM Preferences)
+// ======================================================
+void loadInputConfig() {
+  preferences.begin("input-config", true); // Read-only Modus
+  
+  for (int i = 0; i < 16; i++) {
+    String keyName = "iname_" + String(i);
+    String keyType = "itype_" + String(i);
+    String keyEnabled = "ien_" + String(i);
+    
+    // Name laden (falls gespeichert, sonst Default behalten)
+    String savedName = preferences.getString(keyName.c_str(), "");
+    if (savedName.length() > 0) {
+      inputNames[i] = savedName;
+    }
+    
+    // Type laden
+    String savedType = preferences.getString(keyType.c_str(), "");
+    if (savedType.length() > 0) {
+      inputHAType[i] = savedType;
+    }
+    
+    // Enabled laden
+    if (preferences.isKey(keyEnabled.c_str())) {
+      inputHAEnabled[i] = preferences.getBool(keyEnabled.c_str(), false);
+    }
+  }
+  
+  preferences.end();
+  Serial.println("✅ Input-Konfiguration geladen\n");
+}
+
+void saveInputConfig(int inputIndex, String name, String type, bool enabled) {
+  if (inputIndex < 0 || inputIndex >= 16) {
+    Serial.println("❌ Ungültiger Input Index: " + String(inputIndex));
+    return;
+  }
+  
+  preferences.begin("input-config", false); // Read-Write Modus
+  
+  String keyName = "iname_" + String(inputIndex);
+  String keyType = "itype_" + String(inputIndex);
+  String keyEnabled = "ien_" + String(inputIndex);
+  
+  preferences.putString(keyName.c_str(), name);
+  preferences.putString(keyType.c_str(), type);
+  preferences.putBool(keyEnabled.c_str(), enabled);
+  
+  preferences.end();
+  
+  // Arrays aktualisieren
+  inputNames[inputIndex] = name;
+  inputHAType[inputIndex] = type;
+  inputHAEnabled[inputIndex] = enabled;
+  
+  Serial.println("✅ IN" + String(inputIndex) + " Config: Name=" + name + ", Type=" + type + ", Enabled=" + String(enabled));
 }
 
 void saveRelayName(int relayIndex, String newName) {
@@ -929,6 +1034,50 @@ void publishMQTTDiscovery() {
     delay(50);
   }
   
+  // ======================================================
+  // BINARY SENSOR DISCOVERY (MCP23017 Inputs)
+  // ======================================================
+  for (int i = 0; i < 16; i++) {
+    // Skip wenn nicht enabled
+    if (!inputHAEnabled[i]) {
+      Serial.println("  ⏭️ IN" + String(i) + " übersprungen (deaktiviert)");
+      continue;
+    }
+    
+    String type = inputHAType[i];
+    if (type == "none") {
+      Serial.println("  ⏭️ IN" + String(i) + " übersprungen (type=none)");
+      continue;
+    }
+    
+    String inputDeviceId = "wt32kg_input_" + String(i);
+    String inputName = inputNames[i] + " (IN" + (i < 10 ? "0" : "") + String(i) + ")";
+    String inputObjectId = "input_" + String(i);
+    
+    String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/binary_sensor/" + inputDeviceId + "/config";
+    String stateTopic = String(MQTT_BASE_TOPIC) + "/input/" + String(i) + "/state";
+    
+    String payload = "{";
+    payload += "\"name\":\"" + inputName + "\",";
+    payload += "\"unique_id\":\"" + inputDeviceId + "\",";
+    payload += "\"object_id\":\"" + inputObjectId + "\",";
+    payload += "\"state_topic\":\"" + stateTopic + "\",";
+    payload += "\"payload_on\":\"ON\",";
+    payload += "\"payload_off\":\"OFF\",";
+    
+    // Device Class setzen (falls nicht "switch")
+    if (type != "switch") {
+      payload += "\"device_class\":\"" + type + "\",";
+    }
+    
+    payload += deviceInfo + "}";
+    
+    mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+    String inputNum = (i < 10 ? "IN0" : "IN") + String(i);
+    Serial.println("  ✅ " + inputNum + ": " + inputNames[i] + " (Binary Sensor - " + type + ")");
+    delay(50);
+  }
+  
   Serial.println("📡 Discovery abgeschlossen!");
 }
 
@@ -992,8 +1141,24 @@ void publishAllStates() {
     delay(20);
   }
   
+  // Input States publishen
+  for (int i = 0; i < 16; i++) {
+    publishInputState(i);
+    delay(20);
+  }
+  
   // MPR121 State publishen
   publishMPR121State();
+}
+
+void publishInputState(int inputIndex) {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  if (inputIndex < 0 || inputIndex >= 16) return;
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/input/" + String(inputIndex) + "/state";
+  String statePayload = inputState[inputIndex] ? "ON" : "OFF";  // ON = OPEN, OFF = CLOSED
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
 }
 
 // ======================================================
@@ -1309,6 +1474,7 @@ void setup() {
   server.on("/kronleuchter", handleACDimmer);
   server.on("/savename", handleSaveName);
   server.on("/savecover", handleSaveCover);
+  server.on("/saveinput", handleSaveInput);
   server.on("/cover", handleCover);
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
@@ -1327,6 +1493,9 @@ void setup() {
   
   // Cover-Konfiguration laden
   loadCoverConfig();
+  
+  // Input-Konfiguration laden
+  loadInputConfig();
   
   // MPR121 State laden
   loadMPR121State();
@@ -1431,9 +1600,33 @@ void loop() {
     Serial.println(portB, HEX);
     
     // Eingänge in inputState[] speichern (für Web-UI)
+    // State-Change Detection für MQTT Publishing
+    static uint8_t lastInputState[16] = {0};
+    bool stateChanged = false;
+    
     for (int i = 0; i < 8; i++) {
-      inputState[i] = (portA >> i) & 1;
-      inputState[i + 8] = (portB >> i) & 1;
+      uint8_t newStateA = (portA >> i) & 1;
+      uint8_t newStateB = (portB >> i) & 1;
+      
+      // Port A (IN00-IN07)
+      if (inputState[i] != newStateA) {
+        inputState[i] = newStateA;
+        lastInputState[i] = newStateA;
+        publishInputState(i);  // MQTT State publishen
+        stateChanged = true;
+      }
+      
+      // Port B (IN08-IN15)
+      if (inputState[i + 8] != newStateB) {
+        inputState[i + 8] = newStateB;
+        lastInputState[i + 8] = newStateB;
+        publishInputState(i + 8);  // MQTT State publishen
+        stateChanged = true;
+      }
+    }
+    
+    if (stateChanged) {
+      Serial.println("📡 Input States published via MQTT");
     }
     
     // Schalter-Logik verarbeiten (nur nach Boot-Verzögerung)
@@ -1897,18 +2090,12 @@ void handleHome() {
   html += "<table><tr>";
   html += "<th>Eingang</th><th>Funktion</th><th>Status</th></tr>";
   
-  String inputLabels[16] = {
-    "IR-Küche Links", "IR-Küche Rechts", "Kreuz EG1", "Kreuz EG2", 
-    "Kreuz KG1", "Kreuz KG2", "Kreuz KG3", "Frei",
-    "Frei", "Frei", "Frei", "Frei", "Frei", "Frei", "Frei", "Frei"
-  };
-  
   for (int i = 0; i < 16; i++) {
     String status = inputState[i] ? "OPEN" : "CLOSED";
     String color = inputState[i] ? "lightcoral" : "lightgreen";
     html += "<tr>";
     html += "<td>IN" + String(i) + "</td>";
-    html += "<td>" + inputLabels[i] + "</td>";
+    html += "<td>" + inputNames[i] + "</td>";
     html += "<td id='input-" + String(i) + "-status' style='background-color:" + color + ";font-weight:bold;'>" + status + "</td>";
     html += "</tr>";
   }
@@ -2210,6 +2397,61 @@ void handleEdit() {
     html += "</div>";  // Close relay card
   }
   
+  // ======================================================
+  // INPUT-EINTRÄGE (IN00-IN15, 16 Binary Sensors)
+  // ======================================================
+  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>📥 Input-Devices (IN00-IN15)</h4>";
+  
+  for (int i = 0; i < 16; i++) {
+    String inputNum = (i < 10) ? "IN0" + String(i) : "IN" + String(i);
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
+    
+    // Erste Zeile: Input-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:60px;font-weight:bold;color:#ff9800;'>" + inputNum + ":</label>";
+    html += "<input type='text' id='inputname" + String(i) + "' value='" + inputNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "</div>";
+    
+    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    
+    // Device-Typ Dropdown (Binary Sensor Device Classes)
+    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
+    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
+    html += "<select id='inputtype" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
+    
+    // Binary Sensor Device Classes
+    String types[] = {"none", "switch", "door", "window", "motion", "occupancy", "opening", "garage_door"};
+    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "🚪 Door", "🪟 Window", "👋 Motion", "👤 Occupancy", "📂 Opening", "🏠 Garage"};
+    for (int t = 0; t < 8; t++) {
+      String selected = (inputHAType[i] == types[t]) ? " selected" : "";
+      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+    }
+    
+    html += "</select>";
+    html += "</div>";
+    
+    // HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = inputHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='inputenabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='inputenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
+    html += "</div>";
+    
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveInputConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close input card
+  }
+  
   html += "</div>";
   
   // JavaScript für Save-Funktionen
@@ -2259,6 +2501,30 @@ void handleEdit() {
   html += "    alert('❌ Fehler: ' + error);";
   html += "  });";
   html += "}";
+  
+  // Input Config speichern
+  html += "function saveInputConfig(inputIndex) {";
+  html += "  var name = document.getElementById('inputname' + inputIndex).value.trim();";
+  html += "  var type = document.getElementById('inputtype' + inputIndex).value;";
+  html += "  var enabled = document.getElementById('inputenabled' + inputIndex).checked ? '1' : '0';";
+  html += "  if (name === '') {";
+  html += "    alert('Name darf nicht leer sein!');";
+  html += "    return;";
+  html += "  }";
+  html += "  fetch('/saveinput?input=' + inputIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    if (data.success) {";
+  html += "      alert('✅ Input-Konfiguration gespeichert\\\\n\\\\nName: ' + name + '\\\\nTyp: ' + type + '\\\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
+  html += "    } else {";
+  html += "      alert('❌ Fehler beim Speichern');";
+  html += "    }";
+  html += "  })";
+  html += "  .catch(function(error) {";
+  html += "    alert('❌ Fehler: ' + error);";
+  html += "  });";
+  html += "}";
+  
   html += "</script>";
   
   html += getHTMLFooter();
@@ -2381,6 +2647,49 @@ void handleCover() {
   json += "\"openRelay\":" + String(relayState[openRelay]) + ",";
   json += "\"closeRelay\":" + String(relayState[closeRelay]) + "}";
   
+  server.send(200, "application/json", json);
+}
+
+// ===== API-Handler zum Speichern der Input-Config =====
+void handleSaveInput() {
+  if (!server.hasArg("input") || !server.hasArg("name")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+  
+  int inputIndex = server.arg("input").toInt();
+  String newName = server.arg("name");
+  String newType = server.hasArg("type") ? server.arg("type") : "switch";
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
+  
+  // Validierung
+  if (inputIndex < 0 || inputIndex >= 16) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid input index\"}");
+    return;
+  }
+  
+  if (newName.length() == 0 || newName.length() > 30) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
+    return;
+  }
+  
+  // Type validieren (Binary Sensor Device Classes)
+  if (newType != "none" && newType != "switch" && newType != "door" && newType != "window" && 
+      newType != "motion" && newType != "occupancy" && newType != "opening" && newType != "garage_door") {
+    newType = "switch";  // Fallback auf switch
+  }
+  
+  // Input-Config speichern
+  saveInputConfig(inputIndex, newName, newType, newEnabled);
+  
+  // MQTT Discovery neu senden (falls MQTT aktiv)
+  if (mqttConfig.enabled && mqttClient.connected()) {
+    Serial.println("🔄 MQTT Discovery wird neu gesendet...");
+    publishMQTTDiscovery();
+  }
+  
+  // Erfolg zurückmelden
+  String json = "{\"success\":true,\"input\":" + String(inputIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
