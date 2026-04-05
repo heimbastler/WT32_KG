@@ -8,11 +8,11 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 ### 🖥️ Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
 <img src="pictures/WT32-ETH01_pinout_LL.png" alt="WT32-ETH01 Pinout" width="100%">
 
+<img src="pictures/WT32-Board.jpg" alt="WT32-ETH01 Pinout" width="100%">
+
 **Features:**
 - Ethernet-Verbindung über LAN8720 PHY
 - I²C Kommunikation (GPIO32/SCL, GPIO33/SDA)
-- Integrierte WiFi-Funktionalität
-- 240MHz Dual-Core Prozessor
 
 **PINMAP WT32-ETH01**
 
@@ -31,7 +31,7 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
     EN (Programming)  4 │●                        ●│ 21  GND (Masse)
     CFG (GPIO32)      5 │●                        ●│ 20  IO39 (GPIO39) - MCP23017 IRQ (Input-only)
     485_EN (GPIO33)   6 │●                        ●│ 19  IO36 (GPIO36) - MPR121 IRQ (Input-only)
-    ---             7 │●                        ●│ 18  IO14 (GPIO14) - LED Dimmer PWM
+    ---               7 │●                        ●│ 18  IO14 (GPIO14) - LED Dimmer PWM
     TXD (GPIO17)      8 │●                        ●│ 17  IO15 (GPIO15) - Reserve
     RXD (GPIO05)      9 │●                        ●│ 16  IO04 (GPIO04) - 1-Wire DS18B20
     3V3 (+3.3V)      10 │●                        ●│ 15  IO35 (GPIO35) - Reserve (Input-only)
@@ -60,7 +60,7 @@ Für die komplette GPIO-Funktionszuordnung siehe die GPIO-Übersichtstabelle wei
 here is a very good documentations about this type of boards:
 https://github.com/mcauser/micropython-xl9535-kxv5-relay
 
-<img src="pictures/Board XL9535-K8V5.png" alt="Relais Board XL9535-K8V5" width="30%">
+<img src="pictures/Board XL9535-K8V5.png" alt="Relais Board XL9535-K8V5" width="60%">
 
 #### Verkabelung: 3x PCA9535 Relais Boards (Daisy Chain)
 
@@ -94,7 +94,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 - `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
 
 **MCP23017 Interrupt:**
-- `INTA/INTB`: Verbunden mit MCP23017 IRQ Pin (siehe GPIO-Haupttabelle) - triggert bei Änderung auf GPA0-7 oder GPB0-7
+- `INTA/INTB`: Verbunden mit GPIO39
 
 ⚠️ **WICHTIG - Level Shifter erforderlich für MPR121 Touchboards!**
 Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mit **3.3V Logik**.
@@ -104,13 +104,6 @@ Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mi
   - **SDA**: bidirektional 3.3V ↔ 5V
   - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input MPR121 IRQ Pin ESP32)
 - **OHNE Level Shifter**: 5V-Signale beschädigen die 3.3V-Eingänge des ESP32!
-
-**Spezifikationen:**
-- 16 digitale Ein-/Ausgänge mit individueller Konfiguration
-- I²C Interface (siehe GPIO-Haupttabelle für SCL/SDA Pins)
-- 3.3V Logik-Versorgung über I²C Bus
-- Interner Pull-Up für Input-Pins verfügbar
-- Interrupt-Fähig für Edge-Detection
 
 ---
 
@@ -126,16 +119,6 @@ PWM-Dimmer für 220V AC-Lasten (Kronleuchter, Halogen, LED-Trafos mit Phasenansc
 - **Relative Änderung**: ±% Helligkeit über Web-Interface
 - **Min/Max Grenzen**: Keine extremen PWM-Werte wenn Strom zurückgeregelt wird
 
-**Wichtige Hinweise:**
-- ⚠️ **GEFAHR 220V!** Nur von geschultem Personal installieren
-- 🔌 Netzteil-Versorgung separat (nicht vom WT32!)
-- 📊 PWM-Frequenz: 5kHz (Modul-spezifisch)
-
-**Spezifikationen:**
-- AC 50Hz 220V ~ 1000W max.
-- PWM Phasenanschnitt-Steuerung
-- 3.3V PWM-Signal (ESP32 kompatibel)
-
 ---
 
 ### 💡 LED Dimmer: HW-517 V0.0.1 (1x MOSFET PWM-Dimmer)
@@ -143,7 +126,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 
 <img src="pictures/HW-517 V0.0.1.jpg" alt="HW-517 V0.0.1 LED Dimmer Modul" width="30%">
 
-> **GPIO-Zuordnung:** Siehe [GPIO-Haupttabelle](#-gpio-pinbelegung-übersicht-wt32-eth01) → GPIO14 (PWM Out, MTDO)
+> **GPIO-Zuordnung:**  GPIO14 (PWM Out, MTDO)
 
 **Betriebsarten:**
 - **PWM-Steuerung**: `setLEDDimmerBrightness(0-255)` in [src/main.cpp](src/main.cpp#L1173)
@@ -212,17 +195,17 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
 ║                    NETZWERK-ARCHITEKTUR                         ║
 ╠═════════════════════════════════════════════════════════════════╣
 ║                                                                 ║
-║  ┌─────────────────────────────────────────────────────────┐   ║
-║  │  🔌 ETHERNET (LAN8720 PHY)                              │   ║
-║  │  ───────────────────────────────────────────────────    │   ║
-║  │  ✅ Primäres Netzwerk-Interface                         │   ║
-║  │  ✅ Statische IP: 192.168.178.195                       │   ║
-║  │  ✅ OTA Updates (Port 3232)                             │   ║
-║  │  ✅ Webserver (Port 80)                                 │   ║
-║  │  ✅ mDNS: wt32-kg.local                                 │   ║
-║  │                                                          │   ║
-║  │  📋 Zweck: Internet, Home Assistant, Browser-Zugriff   │   ║
-║  └─────────────────────────────────────────────────────────┘   ║
+║  ┌─────────────────────────────────────────────────────────┐    ║
+║  │  ETHERNET (LAN8720 PHY)                                 │    ║
+║  │  ───────────────────────────────────────────────────    │    ║
+║  │  ✅ Primäres Netzwerk-Interface                         │    ║
+║  │  ✅ Statische IP: 192.168.178.195                       │    ║
+║  │  ✅ OTA Updates (Port 3232)                             │    ║
+║  │  ✅ Webserver (Port 80)                                 │    ║
+║  │  ✅ mDNS: wt32-kg.local                                 │    ║
+║  │                                                         │    ║
+║  │  Zweck: Internet, Home Assistant, Browser-Zugriff       │    ║
+║  └─────────────────────────────────────────────────────────┘    ║
 ║                                                                 ║
 ║  ┌─────────────────────────────────────────────────────────┐   ║
 ║  │  📶 WiFi (ESP32 Radio)                                  │   ║
@@ -437,18 +420,9 @@ Manuelles Flashen
 | GND        | GND    | Masse |
 | TX0        | RXD    | Daten zum PC |
 | RX0        | TXD    | Daten vom PC |
-| EN         | DTS    | als Reset genutzt (muss man an der Seite anlöten / siehe Bild) |
-| IO0        | GND    | (nur während Flashen) Bootmodus aktivieren |
+| EN         | RTS    | als Reset genutzt (muss man an der Seite anlöten / siehe Bild) |
+| IO0        | CTS    | DTR oder DTS |
 
-Ablauf manuell:
-1. IO0 mit GND verbinden → Bootmodus aktiv
 
-2. EN kurz auf GND tippen → Reset auslösen
 
-3. Flash starten (z. B. mit esptool oder ESPHome-Flasher)
-
-4. Nach dem Flashen: IO0 wieder trennen, Power Cycle für Neustart
-
-<img src="pictures/wt32_flash.png" alt="WT32 Flash Setup" width="60%">
-
-<img src="pictures/UART_CP2102.png" alt="CP2102 UART Adapter" width="60%">
+<img src="pictures/WT32_UART.jpg" alt="WT32 Flash Setup" width="60%">

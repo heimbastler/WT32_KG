@@ -2092,17 +2092,17 @@ void handleHome() {
   // OPEN Button
   bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
   String openClass = cover0Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:60px;'>";
+  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:60px;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
   String closeClass = cover0Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:60px;'>";
+  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
@@ -2125,17 +2125,17 @@ void handleHome() {
   // OPEN Button
   bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
   String openClass1 = cover1Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:60px;'>";
+  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:60px;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
   String closeClass1 = cover1Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:60px;'>";
+  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
