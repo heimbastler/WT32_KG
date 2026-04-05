@@ -286,6 +286,17 @@ int coverRelayPairs[2][2] = {
   {2, 3}   // Cover 1 "Türrollo": R02=hoch, R03=runter
 };
 
+// ======================================================
+// SPECIAL DEVICES (MPR121, LED Dimmer, AC Dimmer)
+// ======================================================
+String mpr121Name = "MPR121 Touch-Eingabe";
+String ledDimmerName = "LED Dimmer";
+String acDimmerName = "AC Dimmer (Kronleuchter)";
+
+bool mpr121HAEnabled = true;
+bool ledDimmerHAEnabled = true;
+bool acDimmerHAEnabled = true;
+
 Preferences preferences;  // NVRAM Speicher für persistente Relay-Namen
 
 // ======================================================
@@ -380,6 +391,8 @@ void loadCoverConfig();
 void saveCoverConfig(int coverIndex, String name, bool enabled);
 void loadInputConfig();
 void saveInputConfig(int inputIndex, String name, String type, bool enabled);
+void loadSpecialDeviceConfig();
+void saveSpecialDeviceConfig(int deviceIndex, String name, bool enabled);
 
 // --- Funktionsprototypen für Relaisaktionen ---
 void toggleFensterrolloUp();
@@ -431,6 +444,7 @@ void handleSaveName();
 void handleSaveCover();
 void handleCover();
 void handleSaveInput();
+void handleSaveSpecial();
 void handleMQTT();
 void handleSaveMQTT();
 void handleRestart();
@@ -639,6 +653,78 @@ void saveInputConfig(int inputIndex, String name, String type, bool enabled) {
   inputHAEnabled[inputIndex] = enabled;
   
   Serial.println("✅ IN" + String(inputIndex) + " Config: Name=" + name + ", Type=" + type + ", Enabled=" + String(enabled));
+}
+
+// ======================================================
+// SPECIAL DEVICE CONFIG LADEN/SPEICHERN (NVRAM Preferences)
+// ======================================================
+void loadSpecialDeviceConfig() {
+  preferences.begin("special-dev", true); // Read-only Modus
+  
+  // MPR121 Touch
+  String mpr121SavedName = preferences.getString("mpr_name", "");
+  if (mpr121SavedName.length() > 0) {
+    mpr121Name = mpr121SavedName;
+  }
+  if (preferences.isKey("mpr_en")) {
+    mpr121HAEnabled = preferences.getBool("mpr_en", true);
+  }
+  
+  // LED Dimmer
+  String ledSavedName = preferences.getString("led_name", "");
+  if (ledSavedName.length() > 0) {
+    ledDimmerName = ledSavedName;
+  }
+  if (preferences.isKey("led_en")) {
+    ledDimmerHAEnabled = preferences.getBool("led_en", true);
+  }
+  
+  // AC Dimmer
+  String acSavedName = preferences.getString("ac_name", "");
+  if (acSavedName.length() > 0) {
+    acDimmerName = acSavedName;
+  }
+  if (preferences.isKey("ac_en")) {
+    acDimmerHAEnabled = preferences.getBool("ac_en", true);
+  }
+  
+  preferences.end();
+  Serial.println("✅ Special Device Config geladen");
+}
+
+void saveSpecialDeviceConfig(int deviceIndex, String name, bool enabled) {
+  // deviceIndex: 0=MPR121, 1=LED Dimmer, 2=AC Dimmer
+  if (deviceIndex < 0 || deviceIndex > 2) {
+    Serial.println("❌ Ungültiger Device Index: " + String(deviceIndex));
+    return;
+  }
+  
+  preferences.begin("special-dev", false); // Read-Write Modus
+  
+  if (deviceIndex == 0) {
+    // MPR121
+    preferences.putString("mpr_name", name);
+    preferences.putBool("mpr_en", enabled);
+    mpr121Name = name;
+    mpr121HAEnabled = enabled;
+    Serial.println("✅ MPR121 Config: Name=" + name + ", Enabled=" + String(enabled));
+  } else if (deviceIndex == 1) {
+    // LED Dimmer
+    preferences.putString("led_name", name);
+    preferences.putBool("led_en", enabled);
+    ledDimmerName = name;
+    ledDimmerHAEnabled = enabled;
+    Serial.println("✅ LED Dimmer Config: Name=" + name + ", Enabled=" + String(enabled));
+  } else if (deviceIndex == 2) {
+    // AC Dimmer
+    preferences.putString("ac_name", name);
+    preferences.putBool("ac_en", enabled);
+    acDimmerName = name;
+    acDimmerHAEnabled = enabled;
+    Serial.println("✅ AC Dimmer Config: Name=" + name + ", Enabled=" + String(enabled));
+  }
+  
+  preferences.end();
 }
 
 void saveRelayName(int relayIndex, String newName) {
@@ -1478,6 +1564,7 @@ void setup() {
   server.on("/savename", handleSaveName);
   server.on("/savecover", handleSaveCover);
   server.on("/saveinput", handleSaveInput);
+  server.on("/savespecial", handleSaveSpecial);
   server.on("/cover", handleCover);
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
@@ -1499,6 +1586,9 @@ void setup() {
   
   // Input-Konfiguration laden
   loadInputConfig();
+  
+  // Special Device Config laden (MPR121, LED Dimmer, AC Dimmer)
+  loadSpecialDeviceConfig();
   
   // MPR121 State laden
   loadMPR121State();
@@ -2002,17 +2092,17 @@ void handleHome() {
   // OPEN Button
   bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
   String openClass = cover0Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:120px;'>";
+  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:80px;'>";
   html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:80px;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
   String closeClass = cover0Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:120px;'>";
+  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:80px;'>";
   html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
@@ -2035,17 +2125,17 @@ void handleHome() {
   // OPEN Button
   bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
   String openClass1 = cover1Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:120px;'>";
+  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:80px;'>";
   html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
   // STOP Button
-  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;'>⏹️ Stopp</button>";
+  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:80px;'>⏹️ Stopp</button>";
   
   // CLOSE Button
   bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
   String closeClass1 = cover1Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:120px;'>";
+  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:80px;'>";
   html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
@@ -2120,21 +2210,21 @@ void handleInfo() {
   // Netzwerk-Informationen
   html += "<h3>🌐 Netzwerk</h3>";
   html += "<table>";
-  html += "<tr><th style='width:40%;text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
+  html += "<tr><th style='text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
   
   if (ETH.linkUp()) {
-    html += "<tr><td>Status</td><td style='color:#47c266;'>✅ Verbunden (Ethernet)</td></tr>";
-    html += "<tr><td>IP-Adresse</td><td>" + ETH.localIP().toString() + "</td></tr>";
-    html += "<tr><td>MAC-Adresse</td><td>" + ETH.macAddress() + "</td></tr>";
-    html += "<tr><td>Hostname</td><td>" + String(HOSTNAME) + "</td></tr>";
-    html += "<tr><td>Link Speed</td><td>" + String(ETH.linkSpeed()) + " Mbps</td></tr>";
-    html += "<tr><td>Full Duplex</td><td>" + String(ETH.fullDuplex() ? "Ja" : "Nein") + "</td></tr>";
+    html += "<tr><td style='text-align:left;'>Status</td><td style='color:#47c266;text-align:left;'>✅ Verbunden (Ethernet)</td></tr>";
+    html += "<tr><td style='text-align:left;'>IP-Adresse</td><td style='text-align:left;'>" + ETH.localIP().toString() + "</td></tr>";
+    html += "<tr><td style='text-align:left;'>MAC-Adresse</td><td style='text-align:left;'>" + ETH.macAddress() + "</td></tr>";
+    html += "<tr><td style='text-align:left;'>Hostname</td><td style='text-align:left;'>" + String(HOSTNAME) + "</td></tr>";
+    html += "<tr><td style='text-align:left;'>Link Speed</td><td style='text-align:left;'>" + String(ETH.linkSpeed()) + " Mbps</td></tr>";
+    html += "<tr><td style='text-align:left;'>Full Duplex</td><td style='text-align:left;'>" + String(ETH.fullDuplex() ? "Ja" : "Nein") + "</td></tr>";
   } else {
-    html += "<tr><td>Status</td><td style='color:#d43535;'>❌ Nicht verbunden</td></tr>";
+    html += "<tr><td style='text-align:left;'>Status</td><td style='color:#d43535;text-align:left;'>❌ Nicht verbunden</td></tr>";
   }
   
   // WiFi MAC für ESP-NOW
-  html += "<tr><td>WiFi MAC (ESP-NOW)</td><td>" + WiFi.macAddress() + "</td></tr>";
+  html += "<tr><td style='text-align:left;'>WiFi MAC (ESP-NOW)</td><td style='text-align:left;'>" + WiFi.macAddress() + "</td></tr>";
   html += "</table>";
   
   // System-Informationen
@@ -2457,6 +2547,74 @@ void handleEdit() {
     html += "</div>";  // Close input card
   }
   
+  // ======================================================
+  // SPECIAL DEVICES (MPR121 Touch, LED Dimmer, AC Dimmer)
+  // ======================================================
+  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>⚡ Special Devices</h4>";
+  
+  // MPR121 Touch-Eingabe
+  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
+  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+  html += "<label style='min-width:120px;font-weight:bold;color:#ff9800;'>📱 MPR121 Touch:</label>";
+  html += "<input type='text' id='specialname0' value='" + mpr121Name + "' ";
+  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "maxlength='30'>";
+  html += "</div>";
+  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+  String mprChecked = mpr121HAEnabled ? " checked" : "";
+  html += "<input type='checkbox' id='specialenabled0'" + mprChecked + " ";
+  html += "style='width:18px;height:18px;cursor:pointer;'>";
+  html += "<label for='specialenabled0' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div style='text-align:right;'>";
+  html += "<button onclick='saveSpecialConfig(0)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+  html += "</div>";
+  html += "</div>";
+  
+  // LED Dimmer
+  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ffeb3b;'>";
+  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+  html += "<label style='min-width:120px;font-weight:bold;color:#ffeb3b;'>💡 LED Dimmer:</label>";
+  html += "<input type='text' id='specialname1' value='" + ledDimmerName + "' ";
+  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "maxlength='30'>";
+  html += "</div>";
+  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+  String ledChecked = ledDimmerHAEnabled ? " checked" : "";
+  html += "<input type='checkbox' id='specialenabled1'" + ledChecked + " ";
+  html += "style='width:18px;height:18px;cursor:pointer;'>";
+  html += "<label for='specialenabled1' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div style='text-align:right;'>";
+  html += "<button onclick='saveSpecialConfig(1)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+  html += "</div>";
+  html += "</div>";
+  
+  // AC Dimmer
+  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
+  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+  html += "<label style='min-width:120px;font-weight:bold;color:#4caf50;'>💡 AC Dimmer:</label>";
+  html += "<input type='text' id='specialname2' value='" + acDimmerName + "' ";
+  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+  html += "maxlength='30'>";
+  html += "</div>";
+  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+  String acChecked = acDimmerHAEnabled ? " checked" : "";
+  html += "<input type='checkbox' id='specialenabled2'" + acChecked + " ";
+  html += "style='width:18px;height:18px;cursor:pointer;'>";
+  html += "<label for='specialenabled2' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div style='text-align:right;'>";
+  html += "<button onclick='saveSpecialConfig(2)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+  html += "</div>";
+  html += "</div>";
+  
   html += "</div>";
   
   // JavaScript für Save-Funktionen
@@ -2521,6 +2679,29 @@ void handleEdit() {
   html += "  .then(function(data) {";
   html += "    if (data.success) {";
   html += "      alert('✅ Input-Konfiguration gespeichert\\\\n\\\\nName: ' + name + '\\\\nTyp: ' + type + '\\\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
+  html += "    } else {";
+  html += "      alert('❌ Fehler beim Speichern');";
+  html += "    }";
+  html += "  })";
+  html += "  .catch(function(error) {";
+  html += "    alert('❌ Fehler: ' + error);";
+  html += "  });";
+  html += "}";
+  
+  // Special Device Config speichern
+  html += "function saveSpecialConfig(deviceIndex) {";
+  html += "  var name = document.getElementById('specialname' + deviceIndex).value.trim();";
+  html += "  var enabled = document.getElementById('specialenabled' + deviceIndex).checked ? '1' : '0';";
+  html += "  if (name === '') {";
+  html += "    alert('Name darf nicht leer sein!');";
+  html += "    return;";
+  html += "  }";
+  html += "  var deviceNames = ['MPR121 Touch-Eingabe', 'LED Dimmer', 'AC Dimmer'];";
+  html += "  fetch('/savespecial?device=' + deviceIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)";
+  html += "  .then(function(response) { return response.json(); })";
+  html += "  .then(function(data) {";
+  html += "    if (data.success) {";
+  html += "      alert('✅ ' + deviceNames[deviceIndex] + ' Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
   html += "    } else {";
   html += "      alert('❌ Fehler beim Speichern');";
   html += "    }";
@@ -2695,6 +2876,43 @@ void handleSaveInput() {
   
   // Erfolg zurückmelden
   String json = "{\"success\":true,\"input\":" + String(inputIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
+}
+
+// ===== API-Handler für Special Device Config =====
+void handleSaveSpecial() {
+  if (!server.hasArg("device") || !server.hasArg("name")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+  
+  int deviceIndex = server.arg("device").toInt();
+  String newName = server.arg("name");
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
+  
+  // Validierung
+  if (deviceIndex < 0 || deviceIndex > 2) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid device index\"}");
+    return;
+  }
+  
+  if (newName.length() == 0 || newName.length() > 30) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
+    return;
+  }
+  
+  // Special Device Config speichern
+  saveSpecialDeviceConfig(deviceIndex, newName, newEnabled);
+  
+  // MQTT Discovery neu senden (falls MQTT aktiv)
+  if (mqttConfig.enabled && mqttClient.connected()) {
+    Serial.println("🔄 MQTT Discovery wird neu gesendet...");
+    publishMQTTDiscovery();
+  }
+  
+  // Erfolg zurückmelden
+  String deviceNames[] = {"MPR121", "LED Dimmer", "AC Dimmer"};
+  String json = "{\"success\":true,\"device\":" + String(deviceIndex) + ",\"name\":\"" + newName + "\",\"deviceType\":\"" + deviceNames[deviceIndex] + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
