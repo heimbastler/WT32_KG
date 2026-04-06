@@ -2390,167 +2390,25 @@ void handleRemoveClient() {
 
 // ===== Edit-Seite für Relay-Namen =====
 void handleEdit() {
-  String html = getHTMLHeader("edit");
+  // Verwende Chunked Transfer um String-Size-Limit zu umgehen
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html; charset=UTF-8", "");
   
-  html += "<h3>✏️ Cover & Relay Konfiguration</h3>";
+  String html = getHTMLHeader("edit");
+  server.sendContent(html);
+  
+  html = "<h3>✏️ Konfiguration</h3>";
   html += "<div class='card'>";
   html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>";
   html += "Namen und HA-Status werden permanent im NVRAM gespeichert.<br>";
   html += "💡 <b>Cover</b> = virtuelle Rollläden (steuern je 2 physische Relais) | <b>Light</b> = Lampen | <b>Switch</b> = Schalter";
   html += "</p>";
+  server.sendContent(html);
   
   // ======================================================
-  // COVER-EINTRÄGE (2 virtuelle Cover-Devices)
+  // SPECIAL DEVICES (MPR121 Touch, LED Dimmer, AC Dimmer) - ZUERST!
   // ======================================================
-  html += "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>";
-  
-  for (int i = 0; i < 2; i++) {
-    String coverNum = "Cover " + String(i);
-    String relayPair = (i == 0) ? "(R00+R01)" : "(R02+R03)";
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-    
-    // Erste Zeile: Cover-Nummer & Name
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>";
-    html += "<input type='text' id='covername" + String(i) + "' value='" + coverNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    html += "</div>";
-    
-    // Zweite Zeile: HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
-    String checked = coverHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='coverenabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='coverenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
-    html += "</div>";
-    html += "</div>";
-    
-    // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveCoverConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close cover card
-  }
-  
-  // ======================================================
-  // RELAY-EINTRÄGE (R04-R23, 20 Relais)
-  // ======================================================
-  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>💡 Relay-Devices (R04-R23)</h4>";
-  
-  // Formular für R04-R23 (20 Relais)
-  for (int i = 4; i < 24; i++) {
-    String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>";
-    
-    // Erste Zeile: Relais-Nummer & Name
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:60px;font-weight:bold;color:#1fa3ec;'>" + relaisNum + ":</label>";
-    html += "<input type='text' id='name" + String(i) + "' value='" + relayNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    html += "</div>";
-    
-    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    
-    // Device-Typ Dropdown
-    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
-    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
-    html += "<select id='type" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
-    
-    // Optionen mit aktuellem Wert ausgewählt
-    String types[] = {"none", "switch", "light", "cover", "fan"};
-    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "💡 Light", "🪟 Cover", "🌀 Fan"};
-    for (int t = 0; t < 5; t++) {
-      String selected = (relayHAType[i] == types[t]) ? " selected" : "";
-      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
-    }
-    
-    html += "</select>";
-    html += "</div>";
-    
-    // HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
-    String checked = relayHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='enabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='enabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
-    html += "</div>";
-    
-    html += "</div>";
-    
-    // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close relay card
-  }
-  
-  // ======================================================
-  // INPUT-EINTRÄGE (IN00-IN15, 16 Binary Sensors)
-  // ======================================================
-  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>📥 Input-Devices (IN00-IN15)</h4>";
-  
-  for (int i = 0; i < 16; i++) {
-    String inputNum = (i < 10) ? "IN0" + String(i) : "IN" + String(i);
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
-    
-    // Erste Zeile: Input-Nummer & Name
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:60px;font-weight:bold;color:#ff9800;'>" + inputNum + ":</label>";
-    html += "<input type='text' id='inputname" + String(i) + "' value='" + inputNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    html += "</div>";
-    
-    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    
-    // Device-Typ Dropdown (Binary Sensor Device Classes)
-    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
-    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
-    html += "<select id='inputtype" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
-    
-    // Binary Sensor Device Classes
-    String types[] = {"none", "switch", "door", "window", "motion", "occupancy", "opening", "garage_door"};
-    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "🚪 Door", "🪟 Window", "👋 Motion", "👤 Occupancy", "📂 Opening", "🏠 Garage"};
-    for (int t = 0; t < 8; t++) {
-      String selected = (inputHAType[i] == types[t]) ? " selected" : "";
-      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
-    }
-    
-    html += "</select>";
-    html += "</div>";
-    
-    // HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
-    String checked = inputHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='inputenabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='inputenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
-    html += "</div>";
-    
-    html += "</div>";
-    
-    // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveInputConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close input card
-  }
-  
-  // ======================================================
-  // SPECIAL DEVICES (MPR121 Touch, LED Dimmer, AC Dimmer)
-  // ======================================================
-  html += "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>⚡ Special Devices</h4>";
+  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>⚡ Special Devices</h4>";
   
   // MPR121 Touch-Eingabe
   html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
@@ -2615,10 +2473,175 @@ void handleEdit() {
   html += "</div>";
   html += "</div>";
   
-  html += "</div>";
+  server.sendContent(html);
+  
+  // ======================================================
+  // COVER-EINTRÄGE (2 virtuelle Cover-Devices)
+  // ======================================================
+  html = "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>";
+  
+  for (int i = 0; i < 2; i++) {
+    String coverNum = "Cover " + String(i);
+    String relayPair = (i == 0) ? "(R00+R01)" : "(R02+R03)";
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
+    
+    // Erste Zeile: Cover-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>";
+    html += "<input type='text' id='covername" + String(i) + "' value='" + coverNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "</div>";
+    
+    // Zweite Zeile: HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = coverHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='coverenabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='coverenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
+    html += "</div>";
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveCoverConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close cover card
+    server.sendContent(html);
+  }
+  
+  // ======================================================
+  // RELAY-EINTRÄGE (R04-R23, 20 Relais)
+  // ======================================================
+  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>💡 Relay-Devices (R04-R23)</h4>";
+  server.sendContent(html);
+  
+  // Formular für R04-R23 (20 Relais) - sende alle 5 Relays als Chunk
+  for (int i = 4; i < 24; i++) {
+    if ((i - 4) % 5 == 0) {
+      if (i > 4) server.sendContent(html);
+      html = "";
+    }
+    
+    String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>";
+    
+    // Erste Zeile: Relais-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:60px;font-weight:bold;color:#1fa3ec;'>" + relaisNum + ":</label>";
+    html += "<input type='text' id='name" + String(i) + "' value='" + relayNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "</div>";
+    
+    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    
+    // Device-Typ Dropdown
+    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
+    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
+    html += "<select id='type" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
+    
+    // Optionen mit aktuellem Wert ausgewählt
+    String types[] = {"none", "switch", "light", "cover", "fan"};
+    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "💡 Light", "🪟 Cover", "🌀 Fan"};
+    for (int t = 0; t < 5; t++) {
+      String selected = (relayHAType[i] == types[t]) ? " selected" : "";
+      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+    }
+    
+    html += "</select>";
+    html += "</div>";
+    
+    // HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = relayHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='enabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='enabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
+    html += "</div>";
+    
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close relay card
+  }
+  server.sendContent(html);  // Sende letzte Relays
+  
+  // ======================================================
+  // INPUT-EINTRÄGE (IN00-IN15, 16 Binary Sensors)
+  // ======================================================
+  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>📥 Input-Devices (IN00-IN15)</h4>";
+  server.sendContent(html);
+  
+  for (int i = 0; i < 16; i++) {
+    if (i % 5 == 0) {
+      if (i > 0) server.sendContent(html);
+      html = "";
+    }
+    String inputNum = (i < 10) ? "IN0" + String(i) : "IN" + String(i);
+    
+    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
+    
+    // Erste Zeile: Input-Nummer & Name
+    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
+    html += "<label style='min-width:60px;font-weight:bold;color:#ff9800;'>" + inputNum + ":</label>";
+    html += "<input type='text' id='inputname" + String(i) + "' value='" + inputNames[i] + "' ";
+    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
+    html += "maxlength='30'>";
+    html += "</div>";
+    
+    // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
+    
+    // Device-Typ Dropdown (Binary Sensor Device Classes)
+    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
+    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
+    html += "<select id='inputtype" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
+    
+    // Binary Sensor Device Classes
+    String types[] = {"none", "switch", "door", "window", "motion", "occupancy", "opening", "garage_door"};
+    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "🚪 Door", "🪟 Window", "👋 Motion", "👤 Occupancy", "📂 Opening", "🏠 Garage"};
+    for (int t = 0; t < 8; t++) {
+      String selected = (inputHAType[i] == types[t]) ? " selected" : "";
+      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+    }
+    
+    html += "</select>";
+    html += "</div>";
+    
+    // HA Enable Checkbox
+    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    String checked = inputHAEnabled[i] ? " checked" : "";
+    html += "<input type='checkbox' id='inputenabled" + String(i) + "'" + checked + " ";
+    html += "style='width:18px;height:18px;cursor:pointer;'>";
+    html += "<label for='inputenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
+    html += "</div>";
+    
+    html += "</div>";
+    
+    // Dritte Zeile: Speichern-Button
+    html += "<div style='text-align:right;'>";
+    html += "<button onclick='saveInputConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
+    html += "</div>";
+    
+    html += "</div>";  // Close input card
+  }
+  server.sendContent(html);  // Sende letzte Inputs
+  
+  html = "</div>";  // Close card container
+  server.sendContent(html);
   
   // JavaScript für Save-Funktionen
-  html += "<script>";
+  html = "<script>";
   
   // Cover Config speichern
   html += "function saveCoverConfig(coverIndex) {";
@@ -2712,9 +2735,11 @@ void handleEdit() {
   html += "}";
   
   html += "</script>";
+  server.sendContent(html);
   
-  html += getHTMLFooter();
-  server.send(200, "text/html; charset=UTF-8", html);
+  html = getHTMLFooter();
+  server.sendContent(html);
+  server.sendContent("");  // Beende Chunked Transfer
 }
 
 // ===== API-Handler zum Speichern der Relay-Namen & HA-Config =====
