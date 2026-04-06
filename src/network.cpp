@@ -38,10 +38,17 @@ void initNetworking() {
     ethConnected = true;
     
     #ifdef ETH_USE_STATIC_IP
-    ETH.config(ETH_STATIC_IP, ETH_GATEWAY, ETH_SUBNET);
+    // DNS-Server für Namensauflösung (wichtig für NTP!)
+    IPAddress dns1(8, 8, 8, 8);        // Google DNS
+    IPAddress dns2(192, 168, 178, 1);  // Router DNS
+    ETH.config(ETH_STATIC_IP, ETH_GATEWAY, ETH_SUBNET, dns1, dns2);
     Serial.println("📌 Ethernet: Statische IP konfiguriert");
     Serial.print("   IP: ");
     Serial.println(ETH.localIP());
+    Serial.print("   Gateway: ");
+    Serial.println(ETH_GATEWAY);
+    Serial.print("   DNS: 8.8.8.8, 192.168.178.1");
+    Serial.println();
     #else
     // Warte auf DHCP IP-Zuweisung
     int timeout = 0;

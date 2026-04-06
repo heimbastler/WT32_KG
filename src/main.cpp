@@ -286,6 +286,24 @@ int coverRelayPairs[2][2] = {
   {2, 3}   // Cover 1 "Türrollo": R02=hoch, R03=runter
 };
 
+// Cover Position-Tracking Struktur
+struct CoverState {
+  float position;              // 0.0-100.0% (0=geschlossen, 100=offen)
+  bool isMoving;              // true wenn Cover gerade fährt
+  bool movingUp;              // true=UP/OPEN, false=DOWN/CLOSE
+  unsigned long moveStartTime; // millis() beim Start der Bewegung
+  float moveStartPosition;     // Position beim Start der Bewegung
+  unsigned long fullTravelTime; // Millisekunden für 0→100% Fahrt
+  unsigned long scheduledStopTime; // Für SET_POSITION: wann automatisch stoppen
+  bool autoStopScheduled;      // true wenn Auto-Stop aktiv
+};
+
+// Cover States (Fenster 47s, Tür 48s)
+CoverState covers[2] = {
+  {100.0, false, true, 0, 0, 47000, 0, false}, // Fenster: 47 Sekunden
+  {100.0, false, true, 0, 0, 48000, 0, false}  // Tür: 48 Sekunden
+};
+
 // ======================================================
 // SPECIAL DEVICES (MPR121, LED Dimmer, AC Dimmer)
 // ======================================================
@@ -380,11 +398,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishMQTTDiscovery();
 void publishRelayState(int relayIndex);
 void publishCoverState(int coverIndex);
+void publishCoverPosition(int coverIndex);
 void publishMPR121State();
+void publishLEDDimmerState();
+void publishACDimmerState();
 void publishAllStates();
 void publishInputState(int inputIndex);
 void setRelayState(int relayIndex, int state);
 void setCoverState(int coverIndex, const char* action);  // OPEN, CLOSE, STOP
+void setCoverPosition(int coverIndex, int targetPosition);  // 0-100%
+void updateCoverPosition(int coverIndex);
+void checkScheduledCoverStop(int coverIndex);
+void checkNightlyCalibration();
 void loadMPR121State();
 void saveMPR121State();
 void loadCoverConfig();
@@ -567,6 +592,12 @@ void loadCoverConfig() {
     if (preferences.isKey(keyEnabled.c_str())) {
       coverHAEnabled[i] = preferences.getBool(keyEnabled.c_str(), true);
     }
+    
+    // FORCE: Covers immer enabled für Debugging
+    coverHAEnabled[i] = true;
+    
+    Serial.print("  Cover " + String(i) + ": Name='" + coverNames[i] + "', HAEnabled=");
+    Serial.println(coverHAEnabled[i] ? "true" : "false");
   }
   
   preferences.end();
@@ -807,10 +838,38 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.println(message);
   
   // ======================================================
-  // COVER COMMAND TOPIC: wt32kg/cover/X/set
+  // COVER SET_POSITION TOPIC: wt32kg/cover/X/set_position (ZUERST prüfen!)
   // ======================================================
   String topicStr = String(topic);
-  if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/cover/")) {
+  if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/cover/") && topicStr.endsWith("/set_position")) {
+    // Cover-Index extrahieren
+    int startIdx = String(MQTT_BASE_TOPIC).length() + 7;  // "/cover/"
+    int endIdx = topicStr.indexOf("/set_position");
+    if (endIdx == -1) return;
+    
+    String coverNumStr = topicStr.substring(startIdx, endIdx);
+    int coverIndex = coverNumStr.toInt();
+    
+    if (coverIndex < 0 || coverIndex >= 2) return;
+    
+    // Position verarbeiten (0-100)
+    int targetPosition = String(message).toInt();
+    targetPosition = constrain(targetPosition, 0, 100);
+    
+    Serial.print("📍 MQTT SET_POSITION Cover ");
+    Serial.print(coverIndex);
+    Serial.print(": ");
+    Serial.print(targetPosition);
+    Serial.println("%");
+    
+    setCoverPosition(coverIndex, targetPosition);
+    return;
+  }
+  
+  // ======================================================
+  // COVER COMMAND TOPIC: wt32kg/cover/X/set
+  // ======================================================
+  if (topicStr.startsWith(String(MQTT_BASE_TOPIC) + "/cover/") && topicStr.endsWith("/set")) {
     // Cover-Index extrahieren
     int startIdx = String(MQTT_BASE_TOPIC).length() + 7;  // "/cover/"
     int endIdx = topicStr.indexOf("/set");
@@ -879,6 +938,75 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       publishMPR121State();
       Serial.println("⛔ MPR121 Touch-Eingabe via MQTT DEAKTIVIERT");
     }
+    return;
+  }
+  
+  // ======================================================
+  // LED DIMMER COMMAND TOPICS
+  // ======================================================
+  // ON/OFF Command
+  if (topicStr == String(MQTT_BASE_TOPIC) + "/led_dimmer/set") {
+    String cmd = String(message);
+    cmd.toUpperCase();
+    
+    if (cmd == "ON") {
+      if (ledDimmerBrightness == 0) ledDimmerBrightness = 255; // Default Helligkeit
+      setLEDDimmerBrightness(ledDimmerBrightness);
+      publishLEDDimmerState();
+      Serial.println("✅ LED Dimmer via MQTT AN");
+    } else if (cmd == "OFF") {
+      setLEDDimmerBrightness(0);
+      publishLEDDimmerState();
+      Serial.println("⛔ LED Dimmer via MQTT AUS");
+    }
+    return;
+  }
+  
+  // Brightness Command (0-100)
+  if (topicStr == String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness/set") {
+    int brightnessPercent = String(message).toInt();
+    brightnessPercent = constrain(brightnessPercent, 0, 100);
+    ledDimmerBrightness = map(brightnessPercent, 0, 100, 0, 255);
+    setLEDDimmerBrightness(ledDimmerBrightness);
+    publishLEDDimmerState();
+    Serial.print("💡 LED Dimmer Helligkeit via MQTT: ");
+    Serial.print(brightnessPercent);
+    Serial.println("%");
+    return;
+  }
+  
+  // ======================================================
+  // AC DIMMER COMMAND TOPICS
+  // ======================================================
+  // ON/OFF Command
+  if (topicStr == String(MQTT_BASE_TOPIC) + "/ac_dimmer/set") {
+    String cmd = String(message);
+    cmd.toUpperCase();
+    
+    if (cmd == "ON") {
+      if (acDimmerBrightness == 0) acDimmerBrightness = 255; // Default Helligkeit
+      setACDimmerBrightness(acDimmerBrightness);
+      publishACDimmerState();
+      Serial.println("✅ AC Dimmer via MQTT AN");
+    } else if (cmd == "OFF") {
+      setACDimmerBrightness(0);
+      publishACDimmerState();
+      Serial.println("⛔ AC Dimmer via MQTT AUS");
+    }
+    return;
+  }
+  
+  // Brightness Command (0-100)
+  if (topicStr == String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness/set") {
+    int brightnessPercent = String(message).toInt();
+    brightnessPercent = constrain(brightnessPercent, 0, 100);
+    acDimmerBrightness = map(brightnessPercent, 0, 100, 0, 255);
+    setACDimmerBrightness(acDimmerBrightness);
+    publishACDimmerState();
+    Serial.print("💡 AC Dimmer Helligkeit via MQTT: ");
+    Serial.print(brightnessPercent);
+    Serial.println("%");
+    return;
   }
 }
 
@@ -917,11 +1045,27 @@ void mqttConnect() {
     for (int i = 0; i < 2; i++) {
       String coverCmdTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set";
       mqttClient.subscribe(coverCmdTopic.c_str());
+      
+      // Subscribe zu Cover Position Topics
+      String coverPosTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set_position";
+      mqttClient.subscribe(coverPosTopic.c_str());
     }
     
     // Subscribe zu MPR121 Command Topic
     String mpr121CmdTopic = String(MQTT_BASE_TOPIC) + "/mpr121/set";
     mqttClient.subscribe(mpr121CmdTopic.c_str());
+    
+    // Subscribe zu LED Dimmer Topics
+    String ledDimmerCmdTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/set";
+    mqttClient.subscribe(ledDimmerCmdTopic.c_str());
+    String ledDimmerBrightnessCmdTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness/set";
+    mqttClient.subscribe(ledDimmerBrightnessCmdTopic.c_str());
+    
+    // Subscribe zu AC Dimmer Topics
+    String acDimmerCmdTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/set";
+    mqttClient.subscribe(acDimmerCmdTopic.c_str());
+    String acDimmerBrightnessCmdTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness/set";
+    mqttClient.subscribe(acDimmerBrightnessCmdTopic.c_str());
     
     // Discovery senden (nur einmal nach Verbindung)
     publishMQTTDiscovery();
@@ -1084,9 +1228,79 @@ void publishMQTTDiscovery() {
   Serial.println("  ✅ MPR121 Touch Enable Switch: " + mpr121Name);
   
   // ======================================================
+  // LED DIMMER DISCOVERY (Light mit Brightness)
+  // ======================================================
+  if (ledDimmerHAEnabled) {
+    String ledDeviceId = "wt32kg_led_dimmer";
+    String ledObjectId = "led_dimmer";
+    String ledDiscoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/light/" + ledDeviceId + "/config";
+    String ledStateTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/state";
+    String ledCommandTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/set";
+    String ledBrightnessStateTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness";
+    String ledBrightnessCommandTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness/set";
+    
+    String ledPayload = "{";
+    ledPayload += "\"name\":\"" + ledDimmerName + "\",";
+    ledPayload += "\"unique_id\":\"" + ledDeviceId + "\",";
+    ledPayload += "\"object_id\":\"" + ledObjectId + "\",";
+    ledPayload += "\"state_topic\":\"" + ledStateTopic + "\",";
+    ledPayload += "\"command_topic\":\"" + ledCommandTopic + "\",";
+    ledPayload += "\"brightness_state_topic\":\"" + ledBrightnessStateTopic + "\",";
+    ledPayload += "\"brightness_command_topic\":\"" + ledBrightnessCommandTopic + "\",";
+    ledPayload += "\"brightness_scale\":100,";
+    ledPayload += "\"payload_on\":\"ON\",";
+    ledPayload += "\"payload_off\":\"OFF\",";
+    ledPayload += "\"optimistic\":false,";
+    ledPayload += "\"icon\":\"mdi:led-strip\",";
+    ledPayload += deviceInfo;
+    ledPayload += "}";
+    
+    mqttClient.publish(ledDiscoveryTopic.c_str(), ledPayload.c_str(), true);
+    Serial.println("  ✅ LED Dimmer: " + ledDimmerName + " (Light mit Brightness)");
+    delay(50);
+  }
+  
+  // ======================================================
+  // AC DIMMER DISCOVERY (Light mit Brightness)
+  // ======================================================
+  if (acDimmerHAEnabled) {
+    String acDeviceId = "wt32kg_ac_dimmer";
+    String acObjectId = "ac_dimmer";
+    String acDiscoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/light/" + acDeviceId + "/config";
+    String acStateTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/state";
+    String acCommandTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/set";
+    String acBrightnessStateTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness";
+    String acBrightnessCommandTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness/set";
+    
+    String acPayload = "{";
+    acPayload += "\"name\":\"" + acDimmerName + "\",";
+    acPayload += "\"unique_id\":\"" + acDeviceId + "\",";
+    acPayload += "\"object_id\":\"" + acObjectId + "\",";
+    acPayload += "\"state_topic\":\"" + acStateTopic + "\",";
+    acPayload += "\"command_topic\":\"" + acCommandTopic + "\",";
+    acPayload += "\"brightness_state_topic\":\"" + acBrightnessStateTopic + "\",";
+    acPayload += "\"brightness_command_topic\":\"" + acBrightnessCommandTopic + "\",";
+    acPayload += "\"brightness_scale\":100,";
+    acPayload += "\"payload_on\":\"ON\",";
+    acPayload += "\"payload_off\":\"OFF\",";
+    acPayload += "\"optimistic\":false,";
+    acPayload += "\"icon\":\"mdi:ceiling-light\",";
+    acPayload += deviceInfo;
+    acPayload += "}";
+    
+    mqttClient.publish(acDiscoveryTopic.c_str(), acPayload.c_str(), true);
+    Serial.println("  ✅ AC Dimmer: " + acDimmerName + " (Light mit Brightness)");
+    delay(50);
+  }
+  
+  // ======================================================
   // COVER DISCOVERY (Virtuelle Cover-Devices)
   // ======================================================
+  Serial.println("📍 Cover Discovery wird gesendet...");
   for (int i = 0; i < 2; i++) {
+    Serial.print("  Prüfe Cover " + String(i) + ": HAEnabled=");
+    Serial.println(coverHAEnabled[i] ? "true" : "false");
+    
     if (!coverHAEnabled[i]) {
       Serial.println("  ⏭️ Cover " + String(i) + " übersprungen (deaktiviert)");
       continue;
@@ -1099,6 +1313,10 @@ void publishMQTTDiscovery() {
     String discoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/cover/" + coverDeviceId + "/config";
     String stateTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/state";
     String commandTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set";
+    String positionTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/position";
+    String setPositionTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(i) + "/set_position";
+    
+    Serial.println("  📡 Sende Discovery für Cover " + String(i) + " auf Topic: " + discoveryTopic);
     
     String payload = "{";
     payload += "\"name\":\"" + coverName + "\",";
@@ -1106,6 +1324,10 @@ void publishMQTTDiscovery() {
     payload += "\"object_id\":\"" + coverObjectId + "\",";
     payload += "\"command_topic\":\"" + commandTopic + "\",";
     payload += "\"state_topic\":\"" + stateTopic + "\",";
+    payload += "\"position_topic\":\"" + positionTopic + "\",";
+    payload += "\"set_position_topic\":\"" + setPositionTopic + "\",";
+    payload += "\"position_open\":100,";
+    payload += "\"position_closed\":0,";
     payload += "\"payload_open\":\"OPEN\",";
     payload += "\"payload_close\":\"CLOSE\",";
     payload += "\"payload_stop\":\"STOP\",";
@@ -1118,9 +1340,14 @@ void publishMQTTDiscovery() {
     payload += "\"device_class\":\"blind\",";
     payload += deviceInfo + "}";
     
-    mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
-    Serial.println("  ✅ Cover " + String(i) + ": " + coverName + " (Cover Device)");
-    delay(50);
+    bool published = mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
+    Serial.print("  ");
+    Serial.print(published ? "✅" : "❌");
+    Serial.println(" Cover " + String(i) + ": " + coverName + " (Cover Device)");
+    if (!published) {
+      Serial.println("  ⚠️ MQTT Publish fehlgeschlagen! Payload Size: " + String(payload.length()) + " Bytes");
+    }
+    delay(100);  // Längerer Delay für MQTT Broker Processing
   }
   
   // ======================================================
@@ -1192,6 +1419,32 @@ void publishMPR121State() {
   mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
 }
 
+void publishLEDDimmerState() {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/state";
+  String brightnessTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness";
+  
+  String statePayload = (ledDimmerBrightness > 0) ? "ON" : "OFF";
+  int brightnessPercent = map(ledDimmerBrightness, 0, 255, 0, 100);
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
+  mqttClient.publish(brightnessTopic.c_str(), String(brightnessPercent).c_str(), true);
+}
+
+void publishACDimmerState() {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  
+  String stateTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/state";
+  String brightnessTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness";
+  
+  String statePayload = (acDimmerBrightness > 0) ? "ON" : "OFF";
+  int brightnessPercent = map(acDimmerBrightness, 0, 255, 0, 100);
+  
+  mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
+  mqttClient.publish(brightnessTopic.c_str(), String(brightnessPercent).c_str(), true);
+}
+
 void publishCoverState(int coverIndex) {
   if (!mqttClient.connected() || !mqttConfig.enabled) return;
   if (coverIndex < 0 || coverIndex >= 2) return;
@@ -1212,6 +1465,19 @@ void publishCoverState(int coverIndex) {
   }
   
   mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
+  
+  // Position ebenfalls publishen
+  publishCoverPosition(coverIndex);
+}
+
+void publishCoverPosition(int coverIndex) {
+  if (!mqttClient.connected() || !mqttConfig.enabled) return;
+  if (coverIndex < 0 || coverIndex >= 2) return;
+  
+  String positionTopic = String(MQTT_BASE_TOPIC) + "/cover/" + String(coverIndex) + "/position";
+  String positionPayload = String((int)covers[coverIndex].position);
+  
+  mqttClient.publish(positionTopic.c_str(), positionPayload.c_str(), true);  // retained
 }
 
 void publishAllStates() {
@@ -1238,6 +1504,11 @@ void publishAllStates() {
   
   // MPR121 State publishen
   publishMPR121State();
+  
+  // Dimmer States publishen
+  publishLEDDimmerState();
+  delay(20);
+  publishACDimmerState();
 }
 
 void publishInputState(int inputIndex) {
@@ -1291,6 +1562,46 @@ void setup() {
 
   // Netzwerk initialisieren (Ethernet + WiFi + AP)
   initNetworking();
+
+  // NTP Zeitserver konfigurieren (für nächtliche Cover-Kalibrierung)
+  // NICHT BLOCKIEREND - NTP synchronisiert im Hintergrund
+  Serial.println("\n=== NTP Zeit-Synchronisation ===");
+  
+  // AUTOMATISCHE Sommer-/Winterzeit für Berlin/Deutschland
+  // Sommerzeit: Letzter Sonntag März 02:00 → Letzter Sonntag Oktober 03:00
+  // Winterzeit: Letzter Sonntag Oktober 03:00 → Letzter Sonntag März 02:00
+  
+  // Zeitzone MIT automatischer DST-Umstellung (für getLocalTime)
+  setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
+  tzset();
+  
+  // Initiales NTP-Setup mit Basis-Offset (wird durch TZ überschrieben)
+  const long gmtOffset_sec = 3600;     // UTC+1 (Winterzeit als Basis)
+  const int daylightOffset_sec = 3600; // +1h für Sommerzeit (automatisch)
+  
+  configTime(gmtOffset_sec, daylightOffset_sec, "de.pool.ntp.org", "pool.ntp.org", "time.google.com");
+  
+  Serial.println("⏰ NTP konfiguriert:");
+  Serial.println("   Server: de.pool.ntp.org, pool.ntp.org, time.google.com");
+  Serial.println("   Zeitzone: Europa/Berlin (CET/CEST)");
+  Serial.println("   Winterzeit: UTC+1, Sommerzeit: UTC+2");
+  Serial.println("   Automatische Umstellung: AKTIVIERT");
+  Serial.println("   → Sommerzeit: Letzter So. März 02:00 - Letzter So. Okt. 03:00");
+  Serial.println("   PLZ: 12101 Berlin");
+  
+  // Prüfe nach 3 Sekunden ob NTP erfolgreich war
+  delay(3000);
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    Serial.println("   ✅ Zeit bereits synchronisiert!");
+    Serial.printf("   📅 %02d.%02d.%04d %02d:%02d:%02d", 
+                  timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900,
+                  timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    // DST-Status anzeigen
+    Serial.print(timeinfo.tm_isdst > 0 ? " (Sommerzeit)\n" : " (Winterzeit)\n");
+  } else {
+    Serial.println("   ⏳ Synchronisation läuft...");
+  }
 
   // Warte bis gültige IP-Adresse verfügbar ist (wichtig für OTA!)
   Serial.println("\n=== OTA Setup (Ethernet Only) ===");
@@ -1600,7 +1911,7 @@ void setup() {
   if (mqttConfig.enabled) {
     mqttClient.setServer(mqttConfig.broker, mqttConfig.port);
     mqttClient.setCallback(mqttCallback);
-    mqttClient.setBufferSize(512);  // Größerer Buffer für Discovery-Messages
+    mqttClient.setBufferSize(1024);  // Größerer Buffer für Cover Discovery-Messages (benötigt ~600 Bytes)
     mqttConnect();  // Erste Verbindung
   }
   
@@ -1776,6 +2087,27 @@ void loop() {
     publishRelayState(3);  // MQTT State publishen
     publishCoverState(1);  // Cover-State aktualisieren
   }
+  
+  // === COVER POSITION-TRACKING UPDATE ===
+  // Position-Updates für bewegende Covers (alle 2 Sekunden MQTT publish)
+  static unsigned long lastCoverPositionUpdate = 0;
+  for (int i = 0; i < 2; i++) {
+    updateCoverPosition(i);
+    checkScheduledCoverStop(i);
+  }
+  
+  // MQTT Position Updates (throttled auf 2 Sekunden)
+  if (millis() - lastCoverPositionUpdate > 2000) {
+    for (int i = 0; i < 2; i++) {
+      if (covers[i].isMoving) {
+        publishCoverPosition(i);
+      }
+    }
+    lastCoverPositionUpdate = millis();
+  }
+  
+  // Nächtliche Auto-Kalibrierung (23:00 Uhr)
+  checkNightlyCalibration();
 
   delay(10);  // Reduziert von 50ms → schnellere Reaktionszeit
 }
@@ -1971,14 +2303,16 @@ String getHTMLHeader(String activeTab) {
   // JavaScript für Cover-Steuerung (OPEN/CLOSE/STOP)
   html += "function coverAction(coverIndex, action, btnElement) {";
   html += "  console.log('Cover ' + coverIndex + ' Action: ' + action);";
+  html += "  ";
   html += "  fetch('/cover?idx=' + coverIndex + '&action=' + action)";
   html += "  .then(function(response) { return response.json(); })";
   html += "  .then(function(data) {";
   html += "    console.log('Cover response:', data);";
-  html += "    location.reload();";
+  html += "    setTimeout(function() { location.reload(); }, 500);";
   html += "  })";
   html += "  .catch(function(error) {";
   html += "    console.error('Cover error:', error);";
+  html += "    alert('Fehler bei Cover-Steuerung');";
   html += "  });";
   html += "}";
   
@@ -2084,7 +2418,10 @@ void handleHome() {
   
   // Cover 0: Fensterrollo (R00+R01)
   html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-  html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</div>";
+  html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
+  html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</span>";
+  html += "<span style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[0].position) + "%</span>";
+  html += "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
   html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
@@ -2117,7 +2454,10 @@ void handleHome() {
   
   // Cover 1: Türrollo (R02+R03)
   html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-  html += "<div style='margin-bottom:10px;font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</div>";
+  html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
+  html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</span>";
+  html += "<span style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[1].position) + "%</span>";
+  html += "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
   html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
@@ -2232,6 +2572,17 @@ void handleInfo() {
   html += "<table>";
   html += "<tr><th style='text-align:left;'>Parameter</th><th style='text-align:left;'>Wert</th></tr>";
   html += "<tr><td style='text-align:left;'>Chip Modell</td><td style='text-align:left;'>ESP32 WT32-ETH01</td></tr>";
+  
+  // Aktuelle Zeit anzeigen
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    char timeStr[64];
+    strftime(timeStr, sizeof(timeStr), "%d.%m.%Y %H:%M:%S", &timeinfo);
+    html += "<tr><td style='text-align:left;'>Aktuelle Zeit</td><td style='text-align:left;'>" + String(timeStr) + " (Berlin)</td></tr>";
+  } else {
+    html += "<tr><td style='text-align:left;'>Aktuelle Zeit</td><td style='text-align:left;color:#888;'>⏳ Warte auf NTP-Sync...</td></tr>";
+  }
+  
   html += "<tr><td style='text-align:left;'>Uptime</td><td style='text-align:left;'>" + String(millis() / 1000) + " Sekunden</td></tr>";
   html += "<tr><td style='text-align:left;'>Freier Heap</td><td style='text-align:left;'>" + String(ESP.getFreeHeap() / 1024.0, 2) + " KB</td></tr>";
   html += "<tr><td style='text-align:left;'>Firmware</td><td style='text-align:left;'>WT32-KG Controller v1.0</td></tr>";
@@ -2479,19 +2830,25 @@ void handleEdit() {
   // COVER-EINTRÄGE (2 virtuelle Cover-Devices)
   // ======================================================
   html = "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>";
+  server.sendContent(html);
   
   for (int i = 0; i < 2; i++) {
+    html = "";  // HTML komplett leeren für jeden Cover
     String coverNum = "Cover " + String(i);
     String relayPair = (i == 0) ? "(R00+R01)" : "(R02+R03)";
     
     html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
     
-    // Erste Zeile: Cover-Nummer & Name
+    // Erste Zeile: Cover-Nummer & Name & Aktuelle Position
     html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
     html += "<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>";
     html += "<input type='text' id='covername" + String(i) + "' value='" + coverNames[i] + "' ";
     html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
     html += "maxlength='30'>";
+    
+    // Aktuelle Position anzeigen
+    html += "<span style='min-width:60px;text-align:right;color:#4caf50;font-weight:bold;font-size:14px;'>";
+    html += String((int)covers[i].position) + "%</span>";
     html += "</div>";
     
     // Zweite Zeile: HA Enable Checkbox
@@ -2512,6 +2869,16 @@ void handleEdit() {
     html += "</div>";  // Close cover card
     server.sendContent(html);
   }
+  
+  // Info zur nächtlichen Kalibrierung
+  html = "<div class='card' style='background:#1a237e;border-color:#3f51b5;margin:15px 0;'>";
+  html += "<p style='margin:5px 0;font-size:12px;color:#90caf9;'><b>⏰ Auto-Kalibrierung:</b></p>";
+  html += "<p style='margin:5px 0;font-size:11px;color:#aaa;'>";
+  html += "• Täglich um <b>23:00 Uhr</b> fahren alle Covers automatisch auf 100%<br>";
+  html += "• Position wird neu kalibriert (verhindert Drift durch Laständerungen)<br>";
+  html += "• NTP-Zeit wird von pool.ntp.org synchronisiert</p>";
+  html += "</div>";
+  server.sendContent(html);
   
   // ======================================================
   // RELAY-EINTRÄGE (R04-R23, 20 Relais)
@@ -3174,19 +3541,48 @@ void setCoverState(int coverIndex, const char* action) {
   Serial.println(action);
   
   if (strcmp(action, "OPEN") == 0) {
+    // Position-Tracking starten
+    if (!covers[coverIndex].isMoving) {
+      covers[coverIndex].moveStartTime = millis();
+      covers[coverIndex].moveStartPosition = covers[coverIndex].position;
+    }
+    covers[coverIndex].isMoving = true;
+    covers[coverIndex].movingUp = true;
+    covers[coverIndex].autoStopScheduled = false;
+    
     // Hoch fahren: Open-Relay EIN, Close-Relay AUS
     setRelayState(openRelay, 1);
     setRelayState(closeRelay, 0);
   } 
   else if (strcmp(action, "CLOSE") == 0) {
+    // Position-Tracking starten
+    if (!covers[coverIndex].isMoving) {
+      covers[coverIndex].moveStartTime = millis();
+      covers[coverIndex].moveStartPosition = covers[coverIndex].position;
+    }
+    covers[coverIndex].isMoving = true;
+    covers[coverIndex].movingUp = false;
+    covers[coverIndex].autoStopScheduled = false;
+    
     // Runter fahren: Open-Relay AUS, Close-Relay EIN
     setRelayState(openRelay, 0);
     setRelayState(closeRelay, 1);
   } 
   else if (strcmp(action, "STOP") == 0) {
+    // Position vor dem Stop aktualisieren
+    updateCoverPosition(coverIndex);
+    
+    // Bewegung stoppen
+    covers[coverIndex].isMoving = false;
+    covers[coverIndex].autoStopScheduled = false;
+    
     // Stopp: Beide Relais AUS
     setRelayState(openRelay, 0);
     setRelayState(closeRelay, 0);
+    
+    Serial.print("  📍 Final Position: ");
+    Serial.print(covers[coverIndex].position);
+    Serial.println("%");
   }
   
   // Cover State publishen
@@ -3268,6 +3664,167 @@ void handleInputs() {
   server.send(200, "application/json", response);
 }
 
+// ===== Cover Position-Tracking Funktionen =====
+
+void updateCoverPosition(int coverIndex) {
+  if (!covers[coverIndex].isMoving) return;
+  
+  unsigned long elapsed = millis() - covers[coverIndex].moveStartTime;
+  float travelPercent = ((float)elapsed / (float)covers[coverIndex].fullTravelTime) * 100.0;
+  
+  if (covers[coverIndex].movingUp) {
+    // UP: Position steigt
+    covers[coverIndex].position = covers[coverIndex].moveStartPosition + travelPercent;
+  } else {
+    // DOWN: Position sinkt
+    covers[coverIndex].position = covers[coverIndex].moveStartPosition - travelPercent;
+  }
+  
+  // Clamp 0-100%
+  covers[coverIndex].position = constrain(covers[coverIndex].position, 0.0, 100.0);
+  
+  // Wenn Position Limit erreicht, automatisch stoppen
+  if (covers[coverIndex].position >= 100.0 && covers[coverIndex].movingUp) {
+    Serial.println("🛑 Cover erreichte 100% - Auto-Stop");
+    setCoverState(coverIndex, "STOP");
+  } else if (covers[coverIndex].position <= 0.0 && !covers[coverIndex].movingUp) {
+    Serial.println("🛑 Cover erreichte 0% - Auto-Stop");
+    setCoverState(coverIndex, "STOP");
+  }
+}
+
+void setCoverPosition(int coverIndex, int targetPosition) {
+  if (coverIndex < 0 || coverIndex >= 2) return;
+  targetPosition = constrain(targetPosition, 0, 100);
+  
+  // Aktuelle Position aktualisieren falls Cover gerade fährt
+  if (covers[coverIndex].isMoving) {
+    updateCoverPosition(coverIndex);
+  }
+  
+  float currentPos = covers[coverIndex].position;
+  
+  Serial.print("🎯 setCoverPosition() Cover ");
+  Serial.print(coverIndex);
+  Serial.print(": ");
+  Serial.print(currentPos);
+  Serial.print("% → ");
+  Serial.print(targetPosition);
+  Serial.println("%");
+  
+  if (abs(targetPosition - currentPos) < 1.0) {
+    Serial.println("  ℹ️ Position bereits erreicht");
+    return;
+  }
+  
+  if (targetPosition > currentPos) {
+    // Fahre HOCH
+    float delta = targetPosition - currentPos;
+    unsigned long duration = (delta / 100.0) * covers[coverIndex].fullTravelTime;
+    
+    Serial.print("  ⬆️ Fahre hoch für ");
+    Serial.print(duration);
+    Serial.println(" ms");
+    
+    setCoverState(coverIndex, "OPEN");
+    covers[coverIndex].scheduledStopTime = millis() + duration;
+    covers[coverIndex].autoStopScheduled = true;
+    
+  } else {
+    // Fahre RUNTER
+    float delta = currentPos - targetPosition;
+    unsigned long duration = (delta / 100.0) * covers[coverIndex].fullTravelTime;
+    
+    Serial.print("  ⬇️ Fahre runter für ");
+    Serial.print(duration);
+    Serial.println(" ms");
+    
+    setCoverState(coverIndex, "CLOSE");
+    covers[coverIndex].scheduledStopTime = millis() + duration;
+    covers[coverIndex].autoStopScheduled = true;
+  }
+}
+
+void checkScheduledCoverStop(int coverIndex) {
+  if (!covers[coverIndex].autoStopScheduled) return;
+  if (!covers[coverIndex].isMoving) return;
+  
+  if (millis() >= covers[coverIndex].scheduledStopTime) {
+    Serial.print("⏰ Auto-Stop für Cover ");
+    Serial.println(coverIndex);
+    setCoverState(coverIndex, "STOP");
+  }
+}
+
+void checkNightlyCalibration() {
+  static unsigned long lastCheck = 0;
+  static bool calibratedToday = false;
+  
+  // Check nur alle 60 Sekunden
+  if (millis() - lastCheck < 60000) return;
+  lastCheck = millis();
+  
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
+  
+  // Genau um 23:00 Uhr kalibrieren
+  if (timeinfo.tm_hour == 23 && timeinfo.tm_min == 0) {
+    if (!calibratedToday) {
+      Serial.println("");
+      Serial.println("═══════════════════════════════════════");
+      Serial.println("🌙 NÄCHTLICHE COVER-KALIBRIERUNG");
+      Serial.println("═══════════════════════════════════════");
+      
+      // Cover 0 (Fenster) komplett hochfahren
+      Serial.println("📍 Cover 0 (Fenster): Fahre zu 100%...");
+      setCoverState(0, "OPEN");
+      covers[0].scheduledStopTime = millis() + 50000; // 50s sicher bis oben
+      covers[0].autoStopScheduled = true;
+      
+      // Warte 10 Sekunden
+      delay(10000);
+      
+      // Cover 1 (Tür) komplett hochfahren
+      Serial.println("📍 Cover 1 (Tür): Fahre zu 100%...");
+      setCoverState(1, "OPEN");
+      covers[1].scheduledStopTime = millis() + 50000; // 50s sicher bis oben
+      covers[1].autoStopScheduled = true;
+      
+      // Nach 60 Sekunden beide auf 100% setzen (sicher dass sie oben sind)
+      delay(60000);
+      
+      covers[0].position = 100.0;
+      covers[1].position = 100.0;
+      covers[0].isMoving = false;
+      covers[1].isMoving = false;
+      covers[0].autoStopScheduled = false;
+      covers[1].autoStopScheduled = false;
+      
+      // Beide Relais sicher ausschalten
+      setRelayState(0, 0);
+      setRelayState(1, 0);
+      setRelayState(2, 0);
+      setRelayState(3, 0);
+      
+      // MQTT States publishen
+      publishCoverState(0);
+      publishCoverState(1);
+      
+      Serial.println("✅ Kalibrierung abgeschlossen");
+      Serial.println("  Cover 0: 100% (Fenster)");
+      Serial.println("  Cover 1: 100% (Tür)");
+      Serial.println("═══════════════════════════════════════");
+      Serial.println("");
+      
+      calibratedToday = true;
+    }
+  } else {
+    // Reset Flag außerhalb der 23:00 Stunde
+    if (timeinfo.tm_hour != 23) {
+      calibratedToday = false;
+    }
+  }
+}
 
 
 // --- Relaisaktionsfunktionen mit LOW-aktiv Logik ---
