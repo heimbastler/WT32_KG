@@ -296,12 +296,13 @@ struct CoverState {
   unsigned long fullTravelTime; // Millisekunden für 0→100% Fahrt
   unsigned long scheduledStopTime; // Für SET_POSITION: wann automatisch stoppen
   bool autoStopScheduled;      // true wenn Auto-Stop aktiv
+  bool resetToTopPending;      // true wenn Kalibrier-Reset auf 100% läuft
 };
 
 // Cover States (Fenster 47s, Tür 48s)
 CoverState covers[2] = {
-  {100.0, false, true, 0, 0, 47000, 0, false}, // Fenster: 47 Sekunden
-  {100.0, false, true, 0, 0, 48000, 0, false}  // Tür: 48 Sekunden
+  {100.0, false, true, 0, 0, 47000, 0, false, false}, // Fenster: 47 Sekunden
+  {100.0, false, true, 0, 0, 48000, 0, false, false}  // Tür: 48 Sekunden
 };
 
 // ======================================================
@@ -468,6 +469,7 @@ void handleEdit();
 void handleSaveName();
 void handleSaveCover();
 void handleCover();
+void handleHomeState();
 void handleSaveInput();
 void handleSaveSpecial();
 void handleMQTT();
@@ -1877,6 +1879,7 @@ void setup() {
   server.on("/saveinput", handleSaveInput);
   server.on("/savespecial", handleSaveSpecial);
   server.on("/cover", handleCover);
+  server.on("/home_state", handleHomeState);
   server.on("/mqtt", handleMQTT);
   server.on("/savemqtt", handleSaveMQTT);
   server.on("/restart", handleRestart);
@@ -2155,6 +2158,12 @@ String getHTMLHeader(String activeTab) {
   html += ".btn-rollo:hover{background:#ffaa33;}";
   html += ".btn-neutral{background:#607D8B;color:#fff;border-color:#607D8B;}";
   html += ".btn-neutral:hover{background:#738fa0;}";
+  html += ".btn-cover-open{background:#2e7d32;color:#fff;border-color:#2e7d32;}";
+  html += ".btn-cover-open:hover{background:#3a9440;}";
+  html += ".btn-cover-close{background:#c62828;color:#fff;border-color:#c62828;}";
+  html += ".btn-cover-close:hover{background:#d84343;}";
+  html += ".btn-cover-reset{background:#f9a825;color:#1b1b1b;border-color:#f9a825;font-weight:bold;}";
+  html += ".btn-cover-reset:hover{background:#ffb83a;}";
   
   // Layout Styles
   html += ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}";
@@ -2308,13 +2317,51 @@ String getHTMLHeader(String activeTab) {
   html += "  .then(function(response) { return response.json(); })";
   html += "  .then(function(data) {";
   html += "    console.log('Cover response:', data);";
-  html += "    setTimeout(function() { location.reload(); }, 500);";
+  html += "    updateHomeState();";
   html += "  })";
   html += "  .catch(function(error) {";
   html += "    console.error('Cover error:', error);";
   html += "    alert('Fehler bei Cover-Steuerung');";
   html += "  });";
   html += "}";
+  html += "function updateCoverUiForIndex(i, c) {";
+  html += "  var posEl = document.getElementById('cover' + i + '-position');";
+  html += "  if (posEl) posEl.textContent = c.position + '%';";
+  html += "  var statusEl = document.getElementById('cover' + i + '-status');";
+  html += "  if (statusEl) {";
+  html += "    if (c.resetPending) statusEl.textContent = 'Status: Reset fährt auf 100%';";
+  html += "    else if (c.openRelay == 1) statusEl.textContent = 'Status: Fährt hoch';";
+  html += "    else if (c.closeRelay == 1) statusEl.textContent = 'Status: Fährt runter';";
+  html += "    else statusEl.textContent = 'Status: Gestoppt';";
+  html += "  }";
+  html += "  var openBtn = document.getElementById('cover' + i + '-open');";
+  html += "  if (openBtn) openBtn.textContent = (c.openRelay == 1) ? '▲ Fährt hoch...' : '▲ Öffnen';";
+  html += "  var closeBtn = document.getElementById('cover' + i + '-close');";
+  html += "  if (closeBtn) closeBtn.textContent = (c.closeRelay == 1) ? '▼ Fährt runter...' : '▼ Schließen';";
+  html += "}";
+  html += "function updateHomeState(){";
+  html += "fetch('/home_state').then(function(response){ return response.json(); }).then(function(data){";
+  html += "if(data && data.covers){";
+  html += "for(var i=0;i<data.covers.length;i++){ updateCoverUiForIndex(i, data.covers[i]); }";
+  html += "}";
+  html += "if(data && data.relays){";
+  html += "for(var r=4;r<24;r++){";
+  html += "var btn=document.getElementById('relay-'+r);";
+  html += "if(!btn) continue;";
+  html += "btn.classList.remove('btn-on','btn-off');";
+  html += "btn.classList.add(data.relays[r]==1?'btn-on':'btn-off');";
+  html += "var text=btn.textContent;";
+  html += "if(text.indexOf(':')!==-1){";
+  html += "var parts=text.split(':');";
+  html += "parts[parts.length-1]=data.relays[r]==1?' EIN':' AUS';";
+  html += "btn.textContent=parts.join(':');";
+  html += "}";
+  html += "}";
+  html += "}";
+  html += "}).catch(function(error){ console.error('Home update error:', error); });";
+  html += "}";
+  html += "setInterval(updateHomeState,1000);";
+  html += "updateHomeState();";
   
   html += "</script>";
   
@@ -2420,7 +2467,7 @@ void handleHome() {
   html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
   html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
   html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</span>";
-  html += "<span style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[0].position) + "%</span>";
+  html += "<span id='cover0-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[0].position) + "%</span>";
   html += "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
@@ -2428,8 +2475,7 @@ void handleHome() {
   
   // OPEN Button
   bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
-  String openClass = cover0Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"OPEN\", this)' class='btn " + openClass + "' style='flex:1;max-width:120px;min-width:auto;'>";
+  html += "<button id='cover0-open' onclick='coverAction(0, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
@@ -2438,11 +2484,13 @@ void handleHome() {
   
   // CLOSE Button
   bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
-  String closeClass = cover0Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(0, \"CLOSE\", this)' class='btn " + closeClass + "' style='flex:1;max-width:120px;min-width:auto;'>";
+  html += "<button id='cover0-close' onclick='coverAction(0, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
+  html += "</div>";
+  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
+  html += "<button onclick='coverAction(0, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (47s)</button>";
   html += "</div>";
   
   // Status-Anzeige
@@ -2456,7 +2504,7 @@ void handleHome() {
   html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
   html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
   html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</span>";
-  html += "<span style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[1].position) + "%</span>";
+  html += "<span id='cover1-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[1].position) + "%</span>";
   html += "</div>";
   
   // 3 Buttons: OPEN, CLOSE, STOP
@@ -2464,8 +2512,7 @@ void handleHome() {
   
   // OPEN Button
   bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
-  String openClass1 = cover1Opening ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"OPEN\", this)' class='btn " + openClass1 + "' style='flex:1;max-width:120px;min-width:auto;'>";
+  html += "<button id='cover1-open' onclick='coverAction(1, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
   html += "</button>";
   
@@ -2474,11 +2521,13 @@ void handleHome() {
   
   // CLOSE Button
   bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
-  String closeClass1 = cover1Closing ? "btn-on" : "btn-rollo";
-  html += "<button onclick='coverAction(1, \"CLOSE\", this)' class='btn " + closeClass1 + "' style='flex:1;max-width:120px;min-width:auto;'>";
+  html += "<button id='cover1-close' onclick='coverAction(1, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>";
   html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
   html += "</button>";
   
+  html += "</div>";
+  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
+  html += "<button onclick='coverAction(1, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (48s)</button>";
   html += "</div>";
   
   // Status-Anzeige
@@ -2506,12 +2555,12 @@ void handleHome() {
     if (i == 11) {
       icon = "⚡";
       relaisStatus = relayState[i] ? ": EIN" : ": AUS";
-      html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+      html += "<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
     } else {
       // Alle anderen Relais
       if (i >= 13) icon = "🔌"; // Freie Relais bekommen Stecker-Icon
       relaisStatus = relayState[i] ? ": EIN" : ": AUS";
-      html += "<button onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+      html += "<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
     }
   }
   
@@ -3207,7 +3256,7 @@ void handleCover() {
     return;
   }
   
-  if (action != "OPEN" && action != "CLOSE" && action != "STOP") {
+  if (action != "OPEN" && action != "CLOSE" && action != "STOP" && action != "RESET") {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid action\"}");
     return;
   }
@@ -3225,6 +3274,27 @@ void handleCover() {
   json += "\"openRelay\":" + String(relayState[openRelay]) + ",";
   json += "\"closeRelay\":" + String(relayState[closeRelay]) + "}";
   
+  server.send(200, "application/json", json);
+}
+
+// ===== API-Handler für Home Live-Status =====
+void handleHomeState() {
+  String json = "{\"relays\":[";
+  for (int i = 0; i < 24; i++) {
+    json += String(relayState[i]);
+    if (i < 23) json += ",";
+  }
+  json += "],\"covers\":[";
+  for (int i = 0; i < 2; i++) {
+    int openRelay = coverRelayPairs[i][0];
+    int closeRelay = coverRelayPairs[i][1];
+    json += "{\"position\":" + String((int)covers[i].position) + ",";
+    json += "\"openRelay\":" + String(relayState[openRelay]) + ",";
+    json += "\"closeRelay\":" + String(relayState[closeRelay]) + ",";
+    json += "\"resetPending\":" + String(covers[i].resetToTopPending ? "true" : "false") + "}";
+    if (i < 1) json += ",";
+  }
+  json += "]}";
   server.send(200, "application/json", json);
 }
 
@@ -3549,6 +3619,7 @@ void setCoverState(int coverIndex, const char* action) {
     covers[coverIndex].isMoving = true;
     covers[coverIndex].movingUp = true;
     covers[coverIndex].autoStopScheduled = false;
+    covers[coverIndex].resetToTopPending = false;
     
     // Hoch fahren: Open-Relay EIN, Close-Relay AUS
     setRelayState(openRelay, 1);
@@ -3563,6 +3634,7 @@ void setCoverState(int coverIndex, const char* action) {
     covers[coverIndex].isMoving = true;
     covers[coverIndex].movingUp = false;
     covers[coverIndex].autoStopScheduled = false;
+    covers[coverIndex].resetToTopPending = false;
     
     // Runter fahren: Open-Relay AUS, Close-Relay EIN
     setRelayState(openRelay, 0);
@@ -3575,6 +3647,7 @@ void setCoverState(int coverIndex, const char* action) {
     // Bewegung stoppen
     covers[coverIndex].isMoving = false;
     covers[coverIndex].autoStopScheduled = false;
+    covers[coverIndex].resetToTopPending = false;
     
     // Stopp: Beide Relais AUS
     setRelayState(openRelay, 0);
@@ -3583,6 +3656,23 @@ void setCoverState(int coverIndex, const char* action) {
     Serial.print("  📍 Final Position: ");
     Serial.print(covers[coverIndex].position);
     Serial.println("%");
+  }
+  else if (strcmp(action, "RESET") == 0) {
+    // Reset fährt immer mit maximaler Laufzeit nach oben und setzt dann auf 100%.
+    covers[coverIndex].moveStartTime = millis();
+    covers[coverIndex].moveStartPosition = 0.0;
+    covers[coverIndex].isMoving = true;
+    covers[coverIndex].movingUp = true;
+    covers[coverIndex].scheduledStopTime = millis() + covers[coverIndex].fullTravelTime;
+    covers[coverIndex].autoStopScheduled = true;
+    covers[coverIndex].resetToTopPending = true;
+
+    setRelayState(openRelay, 1);
+    setRelayState(closeRelay, 0);
+
+    Serial.print("  🔁 Reset aktiv, Laufzeit: ");
+    Serial.print(covers[coverIndex].fullTravelTime);
+    Serial.println(" ms");
   }
   
   // Cover State publishen
@@ -3752,7 +3842,16 @@ void checkScheduledCoverStop(int coverIndex) {
   if (millis() >= covers[coverIndex].scheduledStopTime) {
     Serial.print("⏰ Auto-Stop für Cover ");
     Serial.println(coverIndex);
+    bool resetDone = covers[coverIndex].resetToTopPending;
     setCoverState(coverIndex, "STOP");
+    if (resetDone) {
+      covers[coverIndex].position = 100.0;
+      covers[coverIndex].resetToTopPending = false;
+      publishCoverPosition(coverIndex);
+      publishCoverState(coverIndex);
+      Serial.print("✅ Reset abgeschlossen für Cover ");
+      Serial.println(coverIndex);
+    }
   }
 }
 
