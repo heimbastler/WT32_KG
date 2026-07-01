@@ -1618,7 +1618,7 @@ void setup() {
     // ⚠️ WICHTIG: OTA nutzt automatisch das erste verfügbare Interface mit IP
     // Da Ethernet zuerst initialisiert wird, bindet OTA an ETH Interface
     ArduinoOTA.setHostname("WT32-KG-Controller");
-    ArduinoOTA.setPassword("WT32_SecureOTA_2024"); // Sicheres Passwort
+    ArduinoOTA.setPassword("DEIN_OTA_PASSWORT"); // Sicheres Passwort (auch in platformio.ini ändern!)
     ArduinoOTA.setPort(3232);  // Explizit Port 3232 setzen
     
     ArduinoOTA.onStart([]() {
