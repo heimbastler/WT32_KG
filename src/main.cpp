@@ -85,6 +85,8 @@
 #include <WebServer.h>
 #include <ETH.h>
 #include <WiFi.h>  // WiFi für ESP-NOW benötigt (nicht für STA/AP)
+#include <esp_system.h>
+#include <esp_heap_caps.h>
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>  // mDNS für Hostname-Auflösung
 #include <Preferences.h>  // NVRAM Speicher für persistente Daten
@@ -96,6 +98,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "espnow_gateway.h"  // ESP-NOW Gateway
+#include "index_validation.h"
 
 // --- TouchBoards Funktionsprototypen ---
 void initTouchBoards();
@@ -113,6 +116,7 @@ String getNetworkStatus();
 // ---------- Interrupt Pins ----------
 #define MCP23017_IRQ_PIN 39   // GPIO39 für MCP23017 INTA/INTB (Schalter/Taster) - Input-only
 #define MPR121_IRQ_PIN 36     // GPIO36 für MPR121 Wired-OR IRQ (3x Touch via Level Shifter) - Input-only
+#define MCP23017_IOCON_MIRROR_INTERRUPTS 0x40
 
 // ---------- PWM Setup für LED & AC Dimmer ----------
 #define LED_DIMMER_PIN 14        // GPIO14 für MOSFET LED Dimmer HW-517 V0.0.1
@@ -181,6 +185,11 @@ const unsigned long touchDebounceTime = 200;  // 200ms Entprellung
 // ---------- IR-Switch Küche Zustand ----------
 uint8_t lastIRSwitchLeft = LOW;   // Letzter Zustand linker Taster
 uint8_t lastIRSwitchRight = LOW;  // Letzter Zustand rechter Taster
+uint8_t irSwitchCandidateLeft = LOW;
+uint8_t irSwitchCandidateRight = LOW;
+unsigned long irSwitchCandidateSinceLeft = 0;
+unsigned long irSwitchCandidateSinceRight = 0;
+const unsigned long irSwitchDebounceInterval = 50;
 
 // ---------- Kreuzschaltung Zustand ----------
 uint8_t kreuzstateEG = 1;         // EG Kreuzschaltung Zustand (Bit-kombiniert)
@@ -384,9 +393,18 @@ PubSubClient mqttClient(ethClient);
 // MQTT State
 unsigned long lastMQTTReconnect = 0;
 const unsigned long mqttReconnectInterval = 5000;  // 5 Sekunden
-bool mqttDiscoverySent = false;
 unsigned long lastMQTTPublish = 0;
 const unsigned long mqttPublishInterval = 1000;  // Min. 1 Sekunde zwischen State-Updates
+bool mqttDiscoveryPending = false;
+uint8_t mqttDiscoveryPhase = 0;
+uint8_t mqttDiscoveryRelayIndex = 0;
+uint8_t mqttDiscoveryCoverIndex = 0;
+uint8_t mqttDiscoveryInputIndex = 0;
+unsigned long lastMQTTDiscoveryStep = 0;
+bool mqttStatesPending = false;
+uint8_t mqttStatePhase = 0;
+uint8_t mqttStateIndex = 0;
+unsigned long lastMQTTStateStep = 0;
 
 // MPR121 Touch Enable/Disable
 bool mpr121Enabled = true;  // Standard: AKTIV nach Boot
@@ -397,6 +415,7 @@ void saveMQTTConfig();
 void mqttConnect();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishMQTTDiscovery();
+void processMQTTDiscovery();
 void publishRelayState(int relayIndex);
 void publishCoverState(int coverIndex);
 void publishCoverPosition(int coverIndex);
@@ -404,6 +423,7 @@ void publishMPR121State();
 void publishLEDDimmerState();
 void publishACDimmerState();
 void publishAllStates();
+void processMQTTStatePublish();
 void publishInputState(int inputIndex);
 void setRelayState(int relayIndex, int state);
 void setCoverState(int coverIndex, const char* action);  // OPEN, CLOSE, STOP
@@ -487,6 +507,9 @@ const unsigned long rolloActiveTime = 60000; // ms, wie lange das Relais anzieht
 // --- Zeitsteuerung für Temperaturmessung ---
 unsigned long lastTempUpdate = 0;
 const unsigned long tempUpdateInterval = 30000; // 30 Sekunden (schont den µC)
+unsigned long temperatureConversionStarted = 0;
+bool temperatureConversionPending = false;
+bool firstTemperatureConversion = true;
 
 // --- Zeitsteuerung für I2C Lese-Operationen (Throttling) ---
 unsigned long lastI2CRead = 0;
@@ -556,6 +579,7 @@ void saveRelayHAConfig(int relayIndex, String type, bool enabled) {
     Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
     return;
   }
+  if (relayHAType[relayIndex] == type && relayHAEnabled[relayIndex] == enabled) return;
   
   preferences.begin("relay-ha-config", false); // Read-Write Modus
   
@@ -611,6 +635,7 @@ void saveCoverConfig(int coverIndex, String name, bool enabled) {
     Serial.println("❌ Ungültiger Cover Index: " + String(coverIndex));
     return;
   }
+  if (coverNames[coverIndex] == name && coverHAEnabled[coverIndex] == enabled) return;
   
   preferences.begin("cover-config", false); // Read-Write Modus
   
@@ -667,6 +692,7 @@ void saveInputConfig(int inputIndex, String name, String type, bool enabled) {
     Serial.println("❌ Ungültiger Input Index: " + String(inputIndex));
     return;
   }
+  if (inputNames[inputIndex] == name && inputHAType[inputIndex] == type && inputHAEnabled[inputIndex] == enabled) return;
   
   preferences.begin("input-config", false); // Read-Write Modus
   
@@ -731,6 +757,10 @@ void saveSpecialDeviceConfig(int deviceIndex, String name, bool enabled) {
     Serial.println("❌ Ungültiger Device Index: " + String(deviceIndex));
     return;
   }
+
+  if ((deviceIndex == 0 && mpr121Name == name && mpr121HAEnabled == enabled) ||
+      (deviceIndex == 1 && ledDimmerName == name && ledDimmerHAEnabled == enabled) ||
+      (deviceIndex == 2 && acDimmerName == name && acDimmerHAEnabled == enabled)) return;
   
   preferences.begin("special-dev", false); // Read-Write Modus
   
@@ -765,6 +795,7 @@ void saveRelayName(int relayIndex, String newName) {
     Serial.println("❌ Ungültiger Relay Index: " + String(relayIndex));
     return;
   }
+  if (relayNames[relayIndex] == newName) return;
   
   preferences.begin("relay-names", false); // Read-Write Modus
   String key = "R" + String(relayIndex);
@@ -792,7 +823,6 @@ void loadMQTTConfig() {
   Serial.println("\n=== MQTT Konfiguration geladen ===");
   Serial.println("Enabled: " + String(mqttConfig.enabled ? "Ja" : "Nein"));
   Serial.println("Broker: " + String(mqttConfig.broker) + ":" + String(mqttConfig.port));
-  Serial.println("User: " + String(mqttConfig.user));
   Serial.println("======================================\n");
 }
 
@@ -807,6 +837,11 @@ void loadMPR121State() {
 }
 
 void saveMPR121State() {
+  preferences.begin("mpr121-config", true);
+  bool storedState = preferences.getBool("enabled", true);
+  preferences.end();
+  if (storedState == mpr121Enabled) return;
+
   preferences.begin("mpr121-config", false); // Read-write
   preferences.putBool("enabled", mpr121Enabled);
   preferences.end();
@@ -815,6 +850,21 @@ void saveMPR121State() {
 }
 
 void saveMQTTConfig() {
+  char storedBroker[sizeof(mqttConfig.broker)] = {};
+  char storedUser[sizeof(mqttConfig.user)] = {};
+  char storedPassword[sizeof(mqttConfig.password)] = {};
+  preferences.begin("mqtt-config", true);
+  bool storedEnabled = preferences.getBool("enabled", false);
+  int storedPort = preferences.getInt("port", 1883);
+  preferences.getString("broker", storedBroker, sizeof(storedBroker));
+  preferences.getString("user", storedUser, sizeof(storedUser));
+  preferences.getString("password", storedPassword, sizeof(storedPassword));
+  preferences.end();
+
+  if (storedEnabled == mqttConfig.enabled && storedPort == mqttConfig.port &&
+      strcmp(storedBroker, mqttConfig.broker) == 0 && strcmp(storedUser, mqttConfig.user) == 0 &&
+      strcmp(storedPassword, mqttConfig.password) == 0) return;
+
   preferences.begin("mqtt-config", false); // Read-Write
   
   preferences.putBool("enabled", mqttConfig.enabled);
@@ -829,15 +879,17 @@ void saveMQTTConfig() {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (length > 1023) {
+    Serial.println("⚠️ MQTT Nachricht zu lang; verworfen");
+    return;
+  }
+
   // Payload in String konvertieren
   char message[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
   
-  Serial.print("MQTT RX: ");
-  Serial.print(topic);
-  Serial.print(" = ");
-  Serial.println(message);
+  Serial.printf("MQTT RX: topic=%s payloadLength=%u\n", topic, length);
   
   // ======================================================
   // COVER SET_POSITION TOPIC: wt32kg/cover/X/set_position (ZUERST prüfen!)
@@ -850,13 +902,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (endIdx == -1) return;
     
     String coverNumStr = topicStr.substring(startIdx, endIdx);
-    int coverIndex = coverNumStr.toInt();
+    int coverIndex;
+    if (!parseIndex(coverNumStr, 2, coverIndex)) return;
     
-    if (coverIndex < 0 || coverIndex >= 2) return;
-    
-    // Position verarbeiten (0-100)
-    int targetPosition = String(message).toInt();
-    targetPosition = constrain(targetPosition, 0, 100);
+    long parsedPosition;
+    if (!parseStrictInteger(String(message), parsedPosition) || parsedPosition < 0 || parsedPosition > 100) return;
+    int targetPosition = static_cast<int>(parsedPosition);
     
     Serial.print("📍 MQTT SET_POSITION Cover ");
     Serial.print(coverIndex);
@@ -878,13 +929,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (endIdx == -1) return;
     
     String coverNumStr = topicStr.substring(startIdx, endIdx);
-    int coverIndex = coverNumStr.toInt();
-    
-    if (coverIndex < 0 || coverIndex >= 2) return;
+    int coverIndex;
+    if (!parseIndex(coverNumStr, 2, coverIndex)) return;
     
     // Command verarbeiten (OPEN, CLOSE, STOP)
     String cmd = String(message);
     cmd.toUpperCase();
+    if (cmd != "OPEN" && cmd != "CLOSE" && cmd != "STOP" && cmd != "RESET") return;
     
     setCoverState(coverIndex, cmd.c_str());
     return;
@@ -900,9 +951,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (endIdx == -1) return;
     
     String relayNumStr = topicStr.substring(startIdx, endIdx);
-    int relayIndex = relayNumStr.toInt();
-    
-    if (relayIndex < 0 || relayIndex >= 24) return;
+    int relayIndex;
+    if (!parseIndex(relayNumStr, 24, relayIndex)) return;
     
     // ⚠️ R00-R03 werden über Cover-Commands gesteuert, nicht über Relay-Commands
     if (relayIndex >= 0 && relayIndex <= 3) {
@@ -966,8 +1016,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   
   // Brightness Command (0-100)
   if (topicStr == String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness/set") {
-    int brightnessPercent = String(message).toInt();
-    brightnessPercent = constrain(brightnessPercent, 0, 100);
+    long parsedBrightness;
+    if (!parseStrictInteger(String(message), parsedBrightness) || parsedBrightness < 0 || parsedBrightness > 100) return;
+    int brightnessPercent = static_cast<int>(parsedBrightness);
     ledDimmerBrightness = map(brightnessPercent, 0, 100, 0, 255);
     setLEDDimmerBrightness(ledDimmerBrightness);
     publishLEDDimmerState();
@@ -1000,8 +1051,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   
   // Brightness Command (0-100)
   if (topicStr == String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness/set") {
-    int brightnessPercent = String(message).toInt();
-    brightnessPercent = constrain(brightnessPercent, 0, 100);
+    long parsedBrightness;
+    if (!parseStrictInteger(String(message), parsedBrightness) || parsedBrightness < 0 || parsedBrightness > 100) return;
+    int brightnessPercent = static_cast<int>(parsedBrightness);
     acDimmerBrightness = map(brightnessPercent, 0, 100, 0, 255);
     setACDimmerBrightness(acDimmerBrightness);
     publishACDimmerState();
@@ -1075,7 +1127,6 @@ void mqttConnect() {
     // Alle States publishen
     publishAllStates();
     
-    mqttDiscoverySent = true;
   } else {
     Serial.print("❌ MQTT Verbindung fehlgeschlagen, rc=");
     Serial.println(mqttClient.state());
@@ -1084,8 +1135,21 @@ void mqttConnect() {
 
 void publishMQTTDiscovery() {
   if (!mqttClient.connected()) return;
-  
-  Serial.println("📡 Sende Home Assistant Discovery Messages...");
+
+  mqttDiscoveryPending = true;
+  mqttDiscoveryPhase = 1;
+  mqttDiscoveryRelayIndex = 0;
+  mqttDiscoveryCoverIndex = 0;
+  mqttDiscoveryInputIndex = 0;
+  lastMQTTDiscoveryStep = 0;
+  Serial.println("📡 Home Assistant Discovery wird schrittweise gesendet...");
+}
+
+void processMQTTDiscovery() {
+  if (!mqttDiscoveryPending || !mqttClient.connected()) return;
+
+  unsigned long now = millis();
+  if (now - lastMQTTDiscoveryStep < 50) return;
   
   // Device-Info (wird bei allen Entities verwendet)
   String deviceInfo = "\"device\":{";
@@ -1096,10 +1160,12 @@ void publishMQTTDiscovery() {
   deviceInfo += "}";
   
   // Für alle 24 Relais Discovery-Messages senden
-  for (int i = 0; i < 24; i++) {
+  if (mqttDiscoveryPhase == 1) {
+  for (int i = mqttDiscoveryRelayIndex; i < 24; i++) {
     // Skip wenn nicht enabled
     if (!relayHAEnabled[i]) {
       Serial.println("  ⏭️ R" + String(i) + " übersprungen (deaktiviert)");
+      mqttDiscoveryRelayIndex = i + 1;
       continue;
     }
     
@@ -1111,6 +1177,7 @@ void publishMQTTDiscovery() {
     // Skip bei "none"
     if (type == "none") {
       Serial.println("  ⏭️ R" + String(i) + " übersprungen (type=none)");
+      mqttDiscoveryRelayIndex = i + 1;
       continue;
     }
     
@@ -1202,10 +1269,15 @@ void publishMQTTDiscovery() {
       Serial.println("  ✅ " + relayNum + ": " + name + " (Fan)");
     }
     
-    delay(50);  // Kleine Verzögerung zwischen Messages
+    mqttDiscoveryRelayIndex = i + 1;
+    lastMQTTDiscoveryStep = now;
+    return;
+  }
+  mqttDiscoveryPhase = 2;
   }
   
   // MPR121 Touch Enable/Disable Switch
+  if (mqttDiscoveryPhase == 2) {
   String mpr121DeviceId = "wt32kg_mpr121_enable";
   String mpr121Name = "MPR121 Touch-Eingabe";
   String mpr121DiscoveryTopic = String(MQTT_DISCOVERY_PREFIX) + "/switch/" + mpr121DeviceId + "/config";
@@ -1228,10 +1300,15 @@ void publishMQTTDiscovery() {
   
   mqttClient.publish(mpr121DiscoveryTopic.c_str(), mpr121Payload.c_str(), true);
   Serial.println("  ✅ MPR121 Touch Enable Switch: " + mpr121Name);
+  mqttDiscoveryPhase = 3;
+  lastMQTTDiscoveryStep = now;
+  return;
+  }
   
   // ======================================================
   // LED DIMMER DISCOVERY (Light mit Brightness)
   // ======================================================
+  if (mqttDiscoveryPhase == 3) {
   if (ledDimmerHAEnabled) {
     String ledDeviceId = "wt32kg_led_dimmer";
     String ledObjectId = "led_dimmer";
@@ -1259,12 +1336,18 @@ void publishMQTTDiscovery() {
     
     mqttClient.publish(ledDiscoveryTopic.c_str(), ledPayload.c_str(), true);
     Serial.println("  ✅ LED Dimmer: " + ledDimmerName + " (Light mit Brightness)");
-    delay(50);
+  }
+  mqttDiscoveryPhase = 4;
+  if (ledDimmerHAEnabled) {
+    lastMQTTDiscoveryStep = now;
+    return;
+  }
   }
   
   // ======================================================
   // AC DIMMER DISCOVERY (Light mit Brightness)
   // ======================================================
+  if (mqttDiscoveryPhase == 4) {
   if (acDimmerHAEnabled) {
     String acDeviceId = "wt32kg_ac_dimmer";
     String acObjectId = "ac_dimmer";
@@ -1292,19 +1375,26 @@ void publishMQTTDiscovery() {
     
     mqttClient.publish(acDiscoveryTopic.c_str(), acPayload.c_str(), true);
     Serial.println("  ✅ AC Dimmer: " + acDimmerName + " (Light mit Brightness)");
-    delay(50);
+  }
+  mqttDiscoveryPhase = 5;
+  if (acDimmerHAEnabled) {
+    lastMQTTDiscoveryStep = now;
+    return;
+  }
   }
   
   // ======================================================
   // COVER DISCOVERY (Virtuelle Cover-Devices)
   // ======================================================
+  if (mqttDiscoveryPhase == 5) {
   Serial.println("📍 Cover Discovery wird gesendet...");
-  for (int i = 0; i < 2; i++) {
+  for (int i = mqttDiscoveryCoverIndex; i < 2; i++) {
     Serial.print("  Prüfe Cover " + String(i) + ": HAEnabled=");
     Serial.println(coverHAEnabled[i] ? "true" : "false");
     
     if (!coverHAEnabled[i]) {
       Serial.println("  ⏭️ Cover " + String(i) + " übersprungen (deaktiviert)");
+      mqttDiscoveryCoverIndex = i + 1;
       continue;
     }
     
@@ -1349,22 +1439,29 @@ void publishMQTTDiscovery() {
     if (!published) {
       Serial.println("  ⚠️ MQTT Publish fehlgeschlagen! Payload Size: " + String(payload.length()) + " Bytes");
     }
-    delay(100);  // Längerer Delay für MQTT Broker Processing
+    mqttDiscoveryCoverIndex = i + 1;
+    lastMQTTDiscoveryStep = now;
+    return;
+  }
+  mqttDiscoveryPhase = 6;
   }
   
   // ======================================================
   // BINARY SENSOR DISCOVERY (MCP23017 Inputs)
   // ======================================================
-  for (int i = 0; i < 16; i++) {
+  if (mqttDiscoveryPhase == 6) {
+  for (int i = mqttDiscoveryInputIndex; i < 16; i++) {
     // Skip wenn nicht enabled
     if (!inputHAEnabled[i]) {
       Serial.println("  ⏭️ IN" + String(i) + " übersprungen (deaktiviert)");
+      mqttDiscoveryInputIndex = i + 1;
       continue;
     }
     
     String type = inputHAType[i];
     if (type == "none") {
       Serial.println("  ⏭️ IN" + String(i) + " übersprungen (type=none)");
+      mqttDiscoveryInputIndex = i + 1;
       continue;
     }
     
@@ -1393,10 +1490,18 @@ void publishMQTTDiscovery() {
     mqttClient.publish(discoveryTopic.c_str(), payload.c_str(), true);
     String inputNum = (i < 10 ? "IN0" : "IN") + String(i);
     Serial.println("  ✅ " + inputNum + ": " + inputNames[i] + " (Binary Sensor - " + type + ")");
-    delay(50);
+    mqttDiscoveryInputIndex = i + 1;
+    lastMQTTDiscoveryStep = now;
+    return;
+  }
+  mqttDiscoveryPhase = 7;
   }
   
-  Serial.println("📡 Discovery abgeschlossen!");
+  if (mqttDiscoveryPhase == 7) {
+    Serial.println("📡 Discovery abgeschlossen!");
+    mqttDiscoveryPending = false;
+    mqttDiscoveryPhase = 0;
+  }
 }
 
 void publishRelayState(int relayIndex) {
@@ -1484,33 +1589,57 @@ void publishCoverPosition(int coverIndex) {
 
 void publishAllStates() {
   if (!mqttClient.connected() || !mqttConfig.enabled) return;
-  
-  for (int i = 0; i < 24; i++) {
-    String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/state";
-    String statePayload = relayState[i] ? "ON" : "OFF";
-    mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
-    delay(20);  // Kleine Verzögerung
+  mqttStatesPending = true;
+  mqttStatePhase = 0;
+  mqttStateIndex = 0;
+  lastMQTTStateStep = 0;
+}
+
+void processMQTTStatePublish() {
+  if (!mqttStatesPending || !mqttClient.connected() || mqttDiscoveryPending) return;
+
+  unsigned long now = millis();
+  if (now - lastMQTTStateStep < 20) return;
+
+  if (mqttStatePhase == 0) {
+    if (mqttStateIndex < 24) {
+      String stateTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(mqttStateIndex) + "/state";
+      String statePayload = relayState[mqttStateIndex] ? "ON" : "OFF";
+      mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);
+      mqttStateIndex++;
+    } else {
+      mqttStatePhase = 1;
+      mqttStateIndex = 0;
+      return;
+    }
+  } else if (mqttStatePhase == 1) {
+    if (mqttStateIndex < 2) {
+      publishCoverState(mqttStateIndex++);
+    } else {
+      mqttStatePhase = 2;
+      mqttStateIndex = 0;
+      return;
+    }
+  } else if (mqttStatePhase == 2) {
+    if (mqttStateIndex < 16) {
+      publishInputState(mqttStateIndex++);
+    } else {
+      mqttStatePhase = 3;
+      return;
+    }
+  } else if (mqttStatePhase == 3) {
+    publishMPR121State();
+    mqttStatePhase = 4;
+  } else if (mqttStatePhase == 4) {
+    publishLEDDimmerState();
+    mqttStatePhase = 5;
+  } else if (mqttStatePhase == 5) {
+    publishACDimmerState();
+    mqttStatesPending = false;
+    mqttStatePhase = 0;
   }
-  
-  // Cover States publishen
-  for (int i = 0; i < 2; i++) {
-    publishCoverState(i);
-    delay(20);
-  }
-  
-  // Input States publishen
-  for (int i = 0; i < 16; i++) {
-    publishInputState(i);
-    delay(20);
-  }
-  
-  // MPR121 State publishen
-  publishMPR121State();
-  
-  // Dimmer States publishen
-  publishLEDDimmerState();
-  delay(20);
-  publishACDimmerState();
+
+  lastMQTTStateStep = now;
 }
 
 void publishInputState(int inputIndex) {
@@ -1523,12 +1652,31 @@ void publishInputState(int inputIndex) {
   mqttClient.publish(stateTopic.c_str(), statePayload.c_str(), true);  // retained
 }
 
+const char *resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "Power-on";
+    case ESP_RST_EXT: return "External pin";
+    case ESP_RST_SW: return "Software restart";
+    case ESP_RST_PANIC: return "Panic/exception";
+    case ESP_RST_INT_WDT: return "Interrupt watchdog";
+    case ESP_RST_TASK_WDT: return "Task watchdog";
+    case ESP_RST_WDT: return "Watchdog";
+    case ESP_RST_DEEPSLEEP: return "Deep sleep wake";
+    case ESP_RST_BROWNOUT: return "Brownout";
+    case ESP_RST_SDIO: return "SDIO";
+    case ESP_RST_UNKNOWN:
+    default: return "Unknown";
+  }
+}
+
 // ======================================================
 // SETUP
 // ======================================================
 void setup() {
   Serial.begin(115200);
   Serial.println("=== WT32-KG Smart Home Controller ===");
+  esp_reset_reason_t resetReason = esp_reset_reason();
+  Serial.printf("Reset-Grund: %s (%d)\n", resetReasonName(resetReason), static_cast<int>(resetReason));
   
   // Boot-Zeitstempel setzen für Kreuzschaltungs-Verzögerung
   bootTime = millis();
@@ -1684,8 +1832,7 @@ void setup() {
     Serial.print("🔍 Test Reading GPIO: 0x");
     Serial.println(testRead, HEX);
     
-    // GPIO39 als Interrupt-Pin konfigurieren (INPUT_PULLUP für Active-Low)
-    pinMode(MCP23017_IRQ_PIN, INPUT_PULLUP);
+    pinMode(MCP23017_IRQ_PIN, INPUT);
     attachInterrupt(digitalPinToInterrupt(MCP23017_IRQ_PIN), mcpISR, FALLING);
     Serial.println("✅ GPIO39 Interrupt-Handler registriert (FALLING edge)");
   }
@@ -1746,6 +1893,11 @@ void setup() {
   Wire.write(0xFF);  // Alle 8 Bits auf 1 = Pullups ON
   Wire.endTransmission();
   Serial.println("✅ GPPU Register (0x0C, 0x0D): Pull-ups aktiviert");
+
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0A);  // IOCON Register
+  Wire.write(MCP23017_IOCON_MIRROR_INTERRUPTS);
+  Wire.endTransmission();
   
   // 🔴 KRITISCH: Interrupt-Register konfigurieren (Change Detection)
   // GPINTEN Register (0x04 für Port A, 0x05 für Port B): Enable Interrupts
@@ -1756,13 +1908,17 @@ void setup() {
   
   Wire.beginTransmission(0x20);
   Wire.write(0x05);  // GPINTENB Register
-  Wire.write(0x00);  // Port B: keine Interrupts (Reserve)
+  Wire.write(0xFF);  // Alle 8 Pins GPB0-GPB7 interrupt-enabled
   Wire.endTransmission();
   
   // INTCON Register (0x08/0x09): 0 = compare to previous value (change detection)
   Wire.beginTransmission(0x20);
   Wire.write(0x08);  // INTCONA Register
   Wire.write(0x00);  // 0 = Trigger bei Änderung (nicht compare to DEFVAL)
+  Wire.endTransmission();
+  Wire.beginTransmission(0x20);
+  Wire.write(0x09);  // INTCONB Register
+  Wire.write(0x00);
   Wire.endTransmission();
   Serial.println("✅ Interrupt Register (GPINTEN, INTCON): Konfiguriert für Change Detection");
   
@@ -1787,6 +1943,10 @@ void setup() {
   // KRITISCH: IR-Switch Zustände synchronisieren (verhindert Boot-Toggle)
   lastIRSwitchLeft = inputState[IR_SWITCH_KITCHEN_LEFT];
   lastIRSwitchRight = inputState[IR_SWITCH_KITCHEN_RIGHT];
+  irSwitchCandidateLeft = lastIRSwitchLeft;
+  irSwitchCandidateRight = lastIRSwitchRight;
+  irSwitchCandidateSinceLeft = millis();
+  irSwitchCandidateSinceRight = millis();
   Serial.printf("✅ IR-Switches initialisiert: Left=%d, Right=%d\n", lastIRSwitchLeft, lastIRSwitchRight);
   Serial.println("=========================================\n");
 
@@ -1852,8 +2012,8 @@ void setup() {
   Serial.println("\n=== DS18B20 Temperatursensor Initialisierung ===");
   initTemperatureSensors();
   
-  // Initiale Temperaturmessung durchführen (damit Web UI sofort Wert hat)
-  Serial.println("📊 Führe initiale Temperaturmessung durch...");
+  // Initiale Temperaturmessung nicht blockierend starten
+  Serial.println("📊 Starte initiale Temperaturmessung...");
   updateTemperatures();
   
   // ⚠️ NACH Ethernet/OTA Setup, damit OTA bereits an ETH gebunden ist
@@ -1922,6 +2082,27 @@ void setup() {
   Serial.println("Webserver gestartet");
 }
 
+void updateHeapDiagnostics() {
+  static uint32_t minimumFreeHeap = UINT32_MAX;
+  static size_t minimumLargestFreeBlock = static_cast<size_t>(-1);
+  static unsigned long lastLogTime = 0;
+
+  uint32_t freeHeap = ESP.getFreeHeap();
+  size_t largestFreeBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (freeHeap < minimumFreeHeap) minimumFreeHeap = freeHeap;
+  if (largestFreeBlock < minimumLargestFreeBlock) minimumLargestFreeBlock = largestFreeBlock;
+
+  unsigned long now = millis();
+  if (now - lastLogTime < 60000) return;
+  lastLogTime = now;
+
+  Serial.printf("Heap: free=%u B (min=%u B), largest=%u B (min=%u B)\n",
+                static_cast<unsigned>(freeHeap),
+                static_cast<unsigned>(minimumFreeHeap),
+                static_cast<unsigned>(largestFreeBlock),
+                static_cast<unsigned>(minimumLargestFreeBlock));
+}
+
 // ======================================================
 // LOOP
 // ======================================================
@@ -1937,6 +2118,10 @@ void loop() {
       mqttClient.loop();  // MQTT Messages verarbeiten
     }
   }
+
+  processMQTTDiscovery();
+  processMQTTStatePublish();
+  updateHeapDiagnostics();
   
   // ESP-NOW Client-Timeouts prüfen (alle 10 Sekunden)
   static unsigned long lastTimeoutCheck = 0;
@@ -2038,12 +2223,15 @@ void loop() {
     
     // Schalter-Logik verarbeiten (nur nach Boot-Verzögerung)
     if (millis() - bootTime > bootDelay) {
-      handleIRSwitchKitchen();
       handleKreuzschaltungEG();
       handleKreuzschaltungKG();
     } else {
       Serial.println("⏳ Boot-Verzögerung aktiv, Schaltlogik übersprungen");
     }
+  }
+
+  if (millis() - bootTime > bootDelay) {
+    handleIRSwitchKitchen();
   }
   
   // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
@@ -2062,11 +2250,7 @@ void loop() {
     handleTouchEvents();
   }
 
-  // Temperaturen alle 1 Minute aktualisieren
-  if (millis() - lastTempUpdate > tempUpdateInterval) {
-    updateTemperatures();
-    lastTempUpdate = millis();
-  }
+  updateTemperatures();
 
   // --- Sicherheits-Timeout für Rollos (5 Minuten) ---
   // Verhindert dass Rollos bei Fehler endlos laufen
@@ -2126,7 +2310,9 @@ void handleRoot() {
 
 // ===== Gemeinsame HTML-Header-Funktion =====
 String getHTMLHeader(String activeTab) {
-  String html = "<html><head>";
+  String html;
+  html.reserve(8192);
+  html = "<html><head>";
   html += "<meta charset='UTF-8'>";
   html += "<title>WT32-KG Controller</title>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
@@ -2390,6 +2576,7 @@ String getHTMLFooter() {
 // ===== Home-Seite =====
 void handleHome() {
   String html = getHTMLHeader("home");
+  html.reserve(18432);
   
   // MPR121 Touch Enable/Disable
   html += "<h3>📱 Touch-Eingabe (MPR121)</h3>";
@@ -2768,7 +2955,11 @@ void handlePairing() {
 }
 
 void handleClientDetail() {
-  int clientId = server.arg("id").toInt();
+  int clientId;
+  if (!server.hasArg("id") || !parseIndex(server.arg("id"), MAX_ESPNOW_CLIENTS, clientId) || clientId >= espnowClientCount) {
+    server.send(400, "text/plain", "Invalid client index");
+    return;
+  }
   
   String html = getHTMLHeader("espnow");
   html += getClientDetailHTML(clientId);
@@ -2777,11 +2968,13 @@ void handleClientDetail() {
 }
 
 void handleRemoveClient() {
-  int clientId = server.arg("id").toInt();
-  
-  if (clientId >= 0 && clientId < espnowClientCount) {
-    removeESPNowClient(espnowClients[clientId].mac);
+  int clientId;
+  if (!server.hasArg("id") || !parseIndex(server.arg("id"), MAX_ESPNOW_CLIENTS, clientId) || clientId >= espnowClientCount) {
+    server.send(400, "text/plain", "Invalid client index");
+    return;
   }
+
+  removeESPNowClient(espnowClients[clientId].mac);
   
   // Redirect zurück zur ESP-NOW Seite
   server.sendHeader("Location", "/espnow");
@@ -3165,17 +3358,16 @@ void handleSaveName() {
     return;
   }
   
-  int relayIndex = server.arg("relay").toInt();
+  int relayIndex;
+  if (!parseIndex(server.arg("relay"), 24, relayIndex)) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid relay index\"}");
+    return;
+  }
   String newName = server.arg("name");
   String newType = server.hasArg("type") ? server.arg("type") : "switch";
   bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   // Validierung
-  if (relayIndex < 0 || relayIndex >= 24) {
-    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid relay index\"}");
-    return;
-  }
-  
   if (newName.length() == 0 || newName.length() > 30) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
     return;
@@ -3210,15 +3402,13 @@ void handleSaveCover() {
     return;
   }
   
-  int coverIndex = server.arg("cover").toInt();
-  String newName = server.arg("name");
-  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
-  
-  // Validierung
-  if (coverIndex < 0 || coverIndex >= 2) {
+  int coverIndex;
+  if (!parseIndex(server.arg("cover"), 2, coverIndex)) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid cover index\"}");
     return;
   }
+  String newName = server.arg("name");
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   if (newName.length() == 0 || newName.length() > 30) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
@@ -3246,15 +3436,13 @@ void handleCover() {
     return;
   }
   
-  int coverIndex = server.arg("idx").toInt();
-  String action = server.arg("action");
-  action.toUpperCase();
-  
-  // Validierung
-  if (coverIndex < 0 || coverIndex >= 2) {
+  int coverIndex;
+  if (!parseIndex(server.arg("idx"), 2, coverIndex)) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid cover index\"}");
     return;
   }
+  String action = server.arg("action");
+  action.toUpperCase();
   
   if (action != "OPEN" && action != "CLOSE" && action != "STOP" && action != "RESET") {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid action\"}");
@@ -3305,17 +3493,16 @@ void handleSaveInput() {
     return;
   }
   
-  int inputIndex = server.arg("input").toInt();
+  int inputIndex;
+  if (!parseIndex(server.arg("input"), 16, inputIndex)) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid input index\"}");
+    return;
+  }
   String newName = server.arg("name");
   String newType = server.hasArg("type") ? server.arg("type") : "switch";
   bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   // Validierung
-  if (inputIndex < 0 || inputIndex >= 16) {
-    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid input index\"}");
-    return;
-  }
-  
   if (newName.length() == 0 || newName.length() > 30) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
     return;
@@ -3348,15 +3535,13 @@ void handleSaveSpecial() {
     return;
   }
   
-  int deviceIndex = server.arg("device").toInt();
-  String newName = server.arg("name");
-  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
-  
-  // Validierung
-  if (deviceIndex < 0 || deviceIndex > 2) {
+  int deviceIndex;
+  if (!parseIndex(server.arg("device"), 3, deviceIndex)) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid device index\"}");
     return;
   }
+  String newName = server.arg("name");
+  bool newEnabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   if (newName.length() == 0 || newName.length() > 30) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Name length must be 1-30 characters\"}");
@@ -3412,7 +3597,7 @@ void handleMQTT() {
   // Broker IP
   html += "<div style='margin:15px 0;'>";
   html += "<label>Broker IP:</label><br>";
-  html += "<input type='text' id='mqtt_broker' value='" + String(mqttConfig.broker) + "' ";
+  html += "<input type='text' id='mqtt_broker' value='" + String(mqttConfig.broker) + "' maxlength='63' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='192.168.178.1'>";
   html += "</div>";
@@ -3428,7 +3613,7 @@ void handleMQTT() {
   // User
   html += "<div style='margin:15px 0;'>";
   html += "<label>User (optional):</label><br>";
-  html += "<input type='text' id='mqtt_user' value='" + String(mqttConfig.user) + "' ";
+  html += "<input type='text' id='mqtt_user' value='" + String(mqttConfig.user) + "' maxlength='31' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='mqtt_user'>";
   html += "</div>";
@@ -3436,7 +3621,7 @@ void handleMQTT() {
   // Password
   html += "<div style='margin:15px 0;'>";
   html += "<label>Passwort (optional):</label><br>";
-  html += "<input type='password' id='mqtt_pass' value='" + String(mqttConfig.password) + "' ";
+  html += "<input type='password' id='mqtt_pass' value='" + String(mqttConfig.password) + "' maxlength='31' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='****'>";
   html += "</div>";
@@ -3541,20 +3726,47 @@ void handleRestart() {
 
 // ===== MQTT Config Speichern =====
 void handleSaveMQTT() {
-  mqttConfig.enabled = server.hasArg("enabled") && server.arg("enabled") == "1";
+  MQTTConfig updatedConfig = mqttConfig;
+  updatedConfig.enabled = server.hasArg("enabled") && server.arg("enabled") == "1";
   
   if (server.hasArg("broker")) {
-    server.arg("broker").toCharArray(mqttConfig.broker, 64);
+    String broker = server.arg("broker");
+    if (broker.length() >= sizeof(updatedConfig.broker)) {
+      server.send(400, "application/json", "{\"success\":false,\"error\":\"Broker name too long\"}");
+      return;
+    }
+    broker.toCharArray(updatedConfig.broker, sizeof(updatedConfig.broker));
   }
   if (server.hasArg("port")) {
-    mqttConfig.port = server.arg("port").toInt();
+    long port;
+    if (!parseStrictInteger(server.arg("port"), port) || port < 1 || port > 65535) {
+      server.send(400, "application/json", "{\"success\":false,\"error\":\"Port must be between 1 and 65535\"}");
+      return;
+    }
+    updatedConfig.port = static_cast<int>(port);
   }
   if (server.hasArg("user")) {
-    server.arg("user").toCharArray(mqttConfig.user, 32);
+    String user = server.arg("user");
+    if (user.length() >= sizeof(updatedConfig.user)) {
+      server.send(400, "application/json", "{\"success\":false,\"error\":\"Username too long\"}");
+      return;
+    }
+    user.toCharArray(updatedConfig.user, sizeof(updatedConfig.user));
   }
   if (server.hasArg("pass")) {
-    server.arg("pass").toCharArray(mqttConfig.password, 32);
+    String password = server.arg("pass");
+    if (password.length() >= sizeof(updatedConfig.password)) {
+      server.send(400, "application/json", "{\"success\":false,\"error\":\"Password too long\"}");
+      return;
+    }
+    password.toCharArray(updatedConfig.password, sizeof(updatedConfig.password));
   }
+  if (updatedConfig.enabled && updatedConfig.broker[0] == '\0') {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Broker is required when MQTT is enabled\"}");
+    return;
+  }
+
+  mqttConfig = updatedConfig;
   
   saveMQTTConfig();
   
@@ -3680,7 +3892,15 @@ void setCoverState(int coverIndex, const char* action) {
 }
 
 void handleToggle() {
-  int idx = server.arg("r").toInt();
+  int idx;
+  if (!server.hasArg("r")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing relay index\"}");
+    return;
+  }
+  if (!parseIndex(server.arg("r"), 24, idx)) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid relay index\"}");
+    return;
+  }
   Serial.print("🔧 handleToggle() called - Index: ");
   Serial.println(idx);
   
@@ -3858,70 +4078,68 @@ void checkScheduledCoverStop(int coverIndex) {
 void checkNightlyCalibration() {
   static unsigned long lastCheck = 0;
   static bool calibratedToday = false;
+  static uint8_t calibrationStage = 0;
+  static unsigned long calibrationStartTime = 0;
   
-  // Check nur alle 60 Sekunden
-  if (millis() - lastCheck < 60000) return;
-  lastCheck = millis();
+  unsigned long now = millis();
+  if (now - lastCheck < 1000) return;
+  lastCheck = now;
   
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) return;
+
+  if (calibrationStage == 1 && now - calibrationStartTime >= 10000) {
+    Serial.println("📍 Cover 1 (Tür): Fahre zu 100%...");
+    setCoverState(1, "OPEN");
+    covers[1].scheduledStopTime = now + 50000;
+    covers[1].autoStopScheduled = true;
+    calibrationStage = 2;
+    return;
+  }
+
+  if (calibrationStage == 2 && now - calibrationStartTime >= 70000) {
+    covers[0].position = 100.0;
+    covers[1].position = 100.0;
+    covers[0].isMoving = false;
+    covers[1].isMoving = false;
+    covers[0].autoStopScheduled = false;
+    covers[1].autoStopScheduled = false;
+
+    setRelayState(0, 0);
+    setRelayState(1, 0);
+    setRelayState(2, 0);
+    setRelayState(3, 0);
+
+    publishCoverState(0);
+    publishCoverState(1);
+
+    Serial.println("✅ Kalibrierung abgeschlossen");
+    Serial.println("  Cover 0: 100% (Fenster)");
+    Serial.println("  Cover 1: 100% (Tür)");
+    Serial.println("═══════════════════════════════════════");
+    Serial.println("");
+
+    calibrationStage = 0;
+    calibratedToday = true;
+    return;
+  }
   
-  // Genau um 23:00 Uhr kalibrieren
-  if (timeinfo.tm_hour == 23 && timeinfo.tm_min == 0) {
-    if (!calibratedToday) {
-      Serial.println("");
-      Serial.println("═══════════════════════════════════════");
-      Serial.println("🌙 NÄCHTLICHE COVER-KALIBRIERUNG");
-      Serial.println("═══════════════════════════════════════");
-      
-      // Cover 0 (Fenster) komplett hochfahren
-      Serial.println("📍 Cover 0 (Fenster): Fahre zu 100%...");
-      setCoverState(0, "OPEN");
-      covers[0].scheduledStopTime = millis() + 50000; // 50s sicher bis oben
-      covers[0].autoStopScheduled = true;
-      
-      // Warte 10 Sekunden
-      delay(10000);
-      
-      // Cover 1 (Tür) komplett hochfahren
-      Serial.println("📍 Cover 1 (Tür): Fahre zu 100%...");
-      setCoverState(1, "OPEN");
-      covers[1].scheduledStopTime = millis() + 50000; // 50s sicher bis oben
-      covers[1].autoStopScheduled = true;
-      
-      // Nach 60 Sekunden beide auf 100% setzen (sicher dass sie oben sind)
-      delay(60000);
-      
-      covers[0].position = 100.0;
-      covers[1].position = 100.0;
-      covers[0].isMoving = false;
-      covers[1].isMoving = false;
-      covers[0].autoStopScheduled = false;
-      covers[1].autoStopScheduled = false;
-      
-      // Beide Relais sicher ausschalten
-      setRelayState(0, 0);
-      setRelayState(1, 0);
-      setRelayState(2, 0);
-      setRelayState(3, 0);
-      
-      // MQTT States publishen
-      publishCoverState(0);
-      publishCoverState(1);
-      
-      Serial.println("✅ Kalibrierung abgeschlossen");
-      Serial.println("  Cover 0: 100% (Fenster)");
-      Serial.println("  Cover 1: 100% (Tür)");
-      Serial.println("═══════════════════════════════════════");
-      Serial.println("");
-      
-      calibratedToday = true;
-    }
-  } else {
-    // Reset Flag außerhalb der 23:00 Stunde
-    if (timeinfo.tm_hour != 23) {
-      calibratedToday = false;
-    }
+  if (timeinfo.tm_hour != 23 && calibrationStage == 0) {
+    calibratedToday = false;
+  }
+
+  if (timeinfo.tm_hour == 23 && timeinfo.tm_min == 0 && !calibratedToday && calibrationStage == 0) {
+    Serial.println("");
+    Serial.println("═══════════════════════════════════════");
+    Serial.println("🌙 NÄCHTLICHE COVER-KALIBRIERUNG");
+    Serial.println("═══════════════════════════════════════");
+
+    Serial.println("📍 Cover 0 (Fenster): Fahre zu 100%...");
+    setCoverState(0, "OPEN");
+    calibrationStartTime = millis();
+    covers[0].scheduledStopTime = calibrationStartTime + 50000;
+    covers[0].autoStopScheduled = true;
+    calibrationStage = 1;
   }
 }
 
@@ -4196,6 +4414,7 @@ void initTemperatureSensors() {
   delay(100);
   
   temperaturSensoren.begin();
+  temperaturSensoren.setWaitForConversion(false);
   
   // Längere Pause für zuverlässige 1-Wire Enumeration (besonders wichtig bei Input-only Pins)
   delay(500);
@@ -4238,14 +4457,23 @@ void initTemperatureSensors() {
 
 void updateTemperatures() {
   static unsigned long lastDebugPrint = 0;
+  unsigned long now = millis();
   
-  // Temperaturkonversion starten
-  temperaturSensoren.requestTemperatures();
-  // ⏱️ WICHTIG: 9-bit Genauigkeit braucht ~94ms für Konversion
-  // Blockierendes delay - könnte später durch non-blocking ersetzt werden
-  delay(100);
+  if (!temperatureConversionPending) {
+    if (!firstTemperatureConversion && now - lastTempUpdate < tempUpdateInterval) return;
+
+    temperaturSensoren.requestTemperatures();
+    temperatureConversionStarted = now;
+    lastTempUpdate = now;
+    temperatureConversionPending = true;
+    firstTemperatureConversion = false;
+    return;
+  }
+
+  if (now - temperatureConversionStarted < DallasTemperature::millisToWaitForConversion(TEMPERATURE_PRECISION)) return;
   
   float temp = temperaturSensoren.getTempCByIndex(0);
+  temperatureConversionPending = false;
   
   // Debug: Zeige alle 10 Sekunden den Sensor-Status
   if (millis() - lastDebugPrint > 10000) {
@@ -4256,7 +4484,7 @@ void updateTemperatures() {
     } else {
       Serial.println("DISCONNECTED");
     }
-    lastDebugPrint = millis();
+    lastDebugPrint = now;
   }
   
   if (temp != DEVICE_DISCONNECTED_C && temp > -55.0 && temp < 125.0) {
@@ -4308,27 +4536,37 @@ String getTemperatureHTML() {
 // IR-Switch Küche Funktionen (Kabel EG11)
 // ======================================================
 void handleIRSwitchKitchen() {
-  // Aktuelle Zustände der beiden Taster lesen
+  unsigned long now = millis();
   uint8_t currentLeftSwitch = inputState[IR_SWITCH_KITCHEN_LEFT];   // MCP23017 GPA0
   uint8_t currentRightSwitch = inputState[IR_SWITCH_KITCHEN_RIGHT]; // MCP23017 GPA1
-  
-  // Linker Taster: Flanke LOW → HIGH (Taster gedrückt)
-  if (currentLeftSwitch == HIGH && lastIRSwitchLeft == LOW) {
-    Serial.println("IR-Switch Küche LINKS gedrückt → Toggle Küchenarbeitslampe");
-    toggleKuechenarbeitslampe(); // R07 (idx 7) Toggle
-    delay(50); // Entprellen
+
+  if (currentLeftSwitch != irSwitchCandidateLeft) {
+    irSwitchCandidateLeft = currentLeftSwitch;
+    irSwitchCandidateSinceLeft = now;
   }
-  
-  // Rechter Taster: Flanke LOW → HIGH (Taster gedrückt)  
-  if (currentRightSwitch == HIGH && lastIRSwitchRight == LOW) {
-    Serial.println("IR-Switch Küche RECHTS gedrückt → Toggle Küchenarbeitslampe");
-    toggleKuechenarbeitslampe(); // R07 (idx 7) Toggle
-    delay(50); // Entprellen
+
+  if (currentRightSwitch != irSwitchCandidateRight) {
+    irSwitchCandidateRight = currentRightSwitch;
+    irSwitchCandidateSinceRight = now;
   }
-  
-  // Zustände für nächste Iteration speichern
-  lastIRSwitchLeft = currentLeftSwitch;
-  lastIRSwitchRight = currentRightSwitch;
+
+  if (irSwitchCandidateLeft != lastIRSwitchLeft &&
+      now - irSwitchCandidateSinceLeft >= irSwitchDebounceInterval) {
+    if (irSwitchCandidateLeft == HIGH && lastIRSwitchLeft == LOW) {
+      Serial.println("IR-Switch Küche LINKS gedrückt → Toggle Küchenarbeitslampe");
+      toggleKuechenarbeitslampe();
+    }
+    lastIRSwitchLeft = irSwitchCandidateLeft;
+  }
+
+  if (irSwitchCandidateRight != lastIRSwitchRight &&
+      now - irSwitchCandidateSinceRight >= irSwitchDebounceInterval) {
+    if (irSwitchCandidateRight == HIGH && lastIRSwitchRight == LOW) {
+      Serial.println("IR-Switch Küche RECHTS gedrückt → Toggle Küchenarbeitslampe");
+      toggleKuechenarbeitslampe();
+    }
+    lastIRSwitchRight = irSwitchCandidateRight;
+  }
 }
 
 // ======================================================

@@ -17,6 +17,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_PCA9535.h>
+#include "index_validation.h"
 
 // ---------- I2C Setup ----------
 #define SDA_PIN 33 // GPIO33 (488_EN für dieses Projekt)
@@ -43,6 +44,21 @@ void setUp(void) {
 
 void tearDown(void) {
     // Wird nach jedem Test ausgeführt
+}
+
+void test_toggle_index_validation(void) {
+    int index = -1;
+
+    TEST_ASSERT_FALSE(parseIndex(String(), 24, index));
+    TEST_ASSERT_FALSE(parseIndex(String("-1"), 24, index));
+    TEST_ASSERT_FALSE(parseIndex(String("24"), 24, index));
+    TEST_ASSERT_FALSE(parseIndex(String("abc"), 24, index));
+    TEST_ASSERT_FALSE(parseIndex(String("1x"), 24, index));
+
+    TEST_ASSERT_TRUE(parseIndex(String("0"), 24, index));
+    TEST_ASSERT_EQUAL_INT(0, index);
+    TEST_ASSERT_TRUE(parseIndex(String("23"), 24, index));
+    TEST_ASSERT_EQUAL_INT(23, index);
 }
 
 // ---------- I2C Initialisierung ----------
@@ -255,6 +271,7 @@ void setup() {
     UNITY_BEGIN();
     
     // Tests in logischer Reihenfolge
+    RUN_TEST(test_toggle_index_validation);
     RUN_TEST(test_i2c_init);
     RUN_TEST(test_i2c_scan);
     RUN_TEST(test_board_a_relays);

@@ -28,59 +28,54 @@ void initNetworking() {
   // Hardware-reservierte GPIOs: 0, 18, 19, 21, 22, 23, 25, 26, 27
   // 🔴 NIEMALS mit manuellen GPIO-Parametern aufrufen!
   ETH.begin();
-  
-  Serial.println("Warte auf Ethernet-Verbindung...");
-  delay(2000);
-  
-  // Prüfen ob Ethernet verbunden ist
-  if (ETH.linkUp()) {
-    Serial.println("✅ Ethernet Kabel erkannt");
-    ethConnected = true;
-    
-    #ifdef ETH_USE_STATIC_IP
-    // DNS-Server für Namensauflösung (wichtig für NTP!)
-    IPAddress dns1(8, 8, 8, 8);        // Google DNS
-    IPAddress dns2(192, 168, 178, 1);  // Router DNS
-    ETH.config(ETH_STATIC_IP, ETH_GATEWAY, ETH_SUBNET, dns1, dns2);
-    Serial.println("📌 Ethernet: Statische IP konfiguriert");
-    Serial.print("   IP: ");
-    Serial.println(ETH.localIP());
-    Serial.print("   Gateway: ");
-    Serial.println(ETH_GATEWAY);
-    Serial.print("   DNS: 8.8.8.8, 192.168.178.1");
-    Serial.println();
-    #else
-    // Warte auf DHCP IP-Zuweisung
-    int timeout = 0;
-    while (ETH.localIP() == IPAddress(0, 0, 0, 0) && timeout < 20) {
-      delay(500);
-      Serial.print(".");
-      timeout++;
-    }
-    Serial.println();
-    
-    if (ETH.localIP() != IPAddress(0, 0, 0, 0)) {
-      Serial.println("✅ DHCP IP-Adresse erhalten");
-      Serial.print("   IP: ");
-      Serial.println(ETH.localIP());
-      Serial.print("   MAC: ");
-      Serial.println(ETH.macAddress());
-      Serial.print("   Hostname: ");
-      Serial.println(HOSTNAME);
-      Serial.println();
-      Serial.println("╔═══════════════════════════════════════╗");
-      Serial.print("║  WEB-INTERFACE: http://");
-      Serial.print(ETH.localIP());
-      Serial.println("  ║");
-      Serial.println("╚═══════════════════════════════════════╝");
-    } else {
-      Serial.println("❌ FEHLER: Keine DHCP IP-Adresse erhalten!");
-    }
-    #endif
+
+#ifdef ETH_USE_STATIC_IP
+  // IP-Konfiguration auch ohne aktiven Link setzen, damit späteres Einstecken funktioniert.
+  IPAddress dns1(8, 8, 8, 8);
+  IPAddress dns2(192, 168, 178, 1);
+  ETH.config(ETH_STATIC_IP, ETH_GATEWAY, ETH_SUBNET, dns1, dns2);
+  Serial.println("📌 Statische Ethernet-Konfiguration angefordert");
+#else
+  Serial.println("📡 Ethernet wartet auf Link und DHCP-Adresse");
+#endif
+
+  const unsigned long networkStartupTimeoutMs = 10000;
+  const unsigned long startupStartedAt = millis();
+  while (millis() - startupStartedAt < networkStartupTimeoutMs &&
+         (!ETH.linkUp() || ETH.localIP() == IPAddress(0, 0, 0, 0))) {
+    delay(100);
+  }
+
+  const bool linkUp = ETH.linkUp();
+  const IPAddress localIP = ETH.localIP();
+  ethConnected = linkUp && localIP != IPAddress(0, 0, 0, 0);
+
+  if (!linkUp) {
+    Serial.println("❌ Ethernet-Link nach 10 Sekunden nicht verfügbar; fahre offline fort.");
+  } else if (localIP == IPAddress(0, 0, 0, 0)) {
+#ifdef ETH_USE_STATIC_IP
+    Serial.println("❌ Ethernet-Link steht, aber die statische IP wurde nicht aktiviert.");
+    Serial.println("   IP-Konfiguration und mögliche Adresskonflikte prüfen.");
+#else
+    Serial.println("❌ Ethernet-Link steht, aber DHCP lieferte innerhalb von 10 Sekunden keine IP.");
+#endif
   } else {
-    Serial.println("❌ FEHLER: Kein Ethernet Kabel erkannt!");
-    Serial.println("   Bitte Ethernet-Kabel anschließen und neu starten.");
-    ethConnected = false;
+#ifdef ETH_USE_STATIC_IP
+    Serial.println("✅ Statische Ethernet-IP aktiv");
+#else
+    Serial.println("✅ DHCP IP-Adresse erhalten");
+#endif
+    Serial.print("   IP: ");
+    Serial.println(localIP);
+    Serial.print("   MAC: ");
+    Serial.println(ETH.macAddress());
+    Serial.print("   Hostname: ");
+    Serial.println(HOSTNAME);
+    Serial.println("╔═══════════════════════════════════════╗");
+    Serial.print("║  WEB-INTERFACE: http://");
+    Serial.print(localIP);
+    Serial.println("  ║");
+    Serial.println("╚═══════════════════════════════════════╝");
   }
 }
 
