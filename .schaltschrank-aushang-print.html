@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>WT32-KG | Schaltschrank-Aushang</title>
+<style>
+@page { size: A4 landscape; margin: 8mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #17212b; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+body { width: 281mm; height: 194mm; overflow: hidden; }
+h1 { margin: 0; font-size: 21pt; line-height: 1.05; letter-spacing: 0; }
+.meta { margin-top: 2mm; color: #52616d; font-size: 8.5pt; }
+.warning { margin: 4mm 0; padding: 2.5mm 3mm; border: 1px solid #bd4135; border-left: 4px solid #bd4135; background: #fff7f5; font-size: 8.2pt; line-height: 1.28; }
+.columns { display: grid; grid-template-columns: 0.84fr 1.5fr; gap: 5mm; }
+h2 { margin: 0 0 2mm; font-size: 11pt; line-height: 1.1; }
+h2:not(:first-child) { margin-top: 4mm; }
+.access { display: grid; grid-template-columns: 1fr auto; gap: 2mm; align-items: start; }
+.access p, .note { margin: 0 0 1.5mm; font-size: 8.3pt; line-height: 1.25; }
+.qr { width: 28mm; height: 28mm; object-fit: contain; }
+.repo { overflow-wrap: anywhere; color: #176b58; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.7pt; line-height: 1.13; }
+th { background: #e9f1ef; text-align: left; font-weight: 700; }
+th, td { padding: 1.05mm 1.35mm; border-bottom: 0.25mm solid #d5dddf; vertical-align: top; }
+.mqtt th:first-child, .mqtt td:first-child { width: 39%; }
+.relays th:nth-child(1), .relays td:nth-child(1) { width: 17%; }
+.relays th:nth-child(2), .relays td:nth-child(2) { width: 16%; }
+.mismatch th:first-child, .mismatch td:first-child { width: 15%; }
+.mismatch th:nth-child(2), .mismatch td:nth-child(2) { width: 34%; }
+.mismatch th:nth-child(3), .mismatch td:nth-child(3) { width: 51%; }
+.small { margin-top: 2mm; font-size: 7.2pt; color: #52616d; line-height: 1.2; }
+.right h2 + table + h2 { margin-top: 3mm; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WT32-KG | Schaltschrank-Aushang</h1>
+  <div class="meta"><strong>Steuerung:</strong> WT32-ETH01 &nbsp;·&nbsp; <strong>Netzwerk:</strong> Ethernet &nbsp;·&nbsp; <strong>Stand:</strong> 01.11.2026</div>
+</header>
+<div class="warning"><strong>Wichtiger Codeabgleich:</strong> Die vor Ort abgelesene Relaisliste stimmt bei den Rollläden nicht mit der aktuellen Firmware überein. R00/R01 und R02/R03 sind in der Firmware jeweils in umgekehrter Fahrtrichtung benannt und angesteuert. R12 ist laut Schaltschrankliste Kronleuchter L2 (nicht angeschlossen), im Code aber „Reserve Wohnzimmer“ und als Home-Assistant-Light aktiviert. Vor Bedienung dieser Ausgänge Firmware und reale Verdrahtung abgleichen.</div>
+<main class="columns">
+  <section>
+    <h2>Weboberfläche</h2>
+    <div class="access">
+      <div>
+        <p><strong>IP:</strong> http://192.168.178.195/</p>
+        <p><strong>mDNS:</strong> http://wt32-kg.local/ (sofern im lokalen Netz aufgelöst)</p>
+        <p><strong>Repository:</strong><br><span class="repo">github.com/heimbastler/WT32_KG</span></p>
+      </div>
+      <img class="qr" src="file:///tmp/wt32kg-repo-qr.png" alt="QR-Code zum WT32-KG-Repository">
+    </div>
+    <h2>MQTT / Home Assistant</h2>
+    <table class="mqtt">
+      <thead><tr><th>Einstellung</th><th>Wert</th></tr></thead>
+      <tbody>
+        <tr><td>MQTT</td><td>In der Weboberfläche unter <strong>MQTT</strong> aktivieren</td></tr>
+        <tr><td>Broker</td><td>192.168.178.1 (Firmware-Standard; gespeicherten Wert prüfen)</td></tr>
+        <tr><td>Port</td><td>1883 (Firmware-Standard)</td></tr>
+        <tr><td>Benutzer</td><td>________________________________</td></tr>
+        <tr><td>Passwort</td><td>________________________________</td></tr>
+        <tr><td>Transport</td><td>Ethernet / TCP</td></tr>
+        <tr><td>Base Topic</td><td>wt32kg</td></tr>
+        <tr><td>HA Discovery Prefix</td><td>homeassistant</td></tr>
+      </tbody>
+    </table>
+    <p class="small">Broker, Port und Zugangsdaten können über die MQTT-Seite geändert werden und werden im ESP32 gespeichert. Das Passwort ist absichtlich nicht auf diesem Blatt hinterlegt.</p>
+  </section>
+  <section class="right">
+    <h2>Relaiszuordnung laut Schaltschrank</h2>
+    <table class="relays">
+      <thead><tr><th>Relais</th><th>Kabel</th><th>Physische Funktion laut RELAIS.md</th></tr></thead>
+      <tbody>
+        <tr><td>R00</td><td>&lt;044&gt;</td><td>Fensterjalousie runter</td></tr>
+        <tr><td>R01</td><td>&lt;047&gt;</td><td>Fensterjalousie hoch</td></tr>
+        <tr><td>R02</td><td>&lt;045&gt;</td><td>Türjalousie runter</td></tr>
+        <tr><td>R03</td><td>&lt;046&gt;</td><td>Türjalousie hoch</td></tr>
+        <tr><td>R04</td><td>&lt;043&gt;</td><td>Außenlampe Garten</td></tr>
+        <tr><td>R05</td><td>&lt;019&gt;</td><td>Steinlampen / Stein</td></tr>
+        <tr><td>R06</td><td>&lt;120&gt;</td><td>KG-Flur</td></tr>
+        <tr><td>R07</td><td>&lt;025&gt;</td><td>Arbeitsleuchten</td></tr>
+        <tr><td>R08</td><td>&lt;011&gt;</td><td>Küche</td></tr>
+        <tr><td>R09</td><td>&lt;010&gt;</td><td>EG-Flur</td></tr>
+        <tr><td>R10</td><td>&lt;009&gt;</td><td>Trägerlampen / Tisch</td></tr>
+        <tr><td>R11</td><td>&lt;033&gt;</td><td>Kronleuchter</td></tr>
+        <tr><td>R12</td><td>&lt;034&gt;</td><td>Kronleuchter L2, nicht an Lampe angeschlossen</td></tr>
+        <tr><td>R13–R15</td><td>—</td><td>In RELAIS.md nicht zugeordnet</td></tr>
+        <tr><td>R16–R23</td><td>—</td><td>In RELAIS.md nicht aufgeführt</td></tr>
+      </tbody>
+    </table>
+    <h2>Firmwareabweichungen</h2>
+    <table class="mismatch">
+      <thead><tr><th>Relais</th><th>Schaltschrankliste</th><th>Aktueller Code in src/main.cpp</th></tr></thead>
+      <tbody>
+        <tr><td>R00 / R01</td><td>R00 runter, R01 hoch</td><td>R00 hoch, R01 runter; Cover 0 nutzt R00 als „open“</td></tr>
+        <tr><td>R02 / R03</td><td>R02 runter, R03 hoch</td><td>R02 hoch, R03 runter; Cover 1 nutzt R02 als „open“</td></tr>
+        <tr><td>R07</td><td>Arbeitsleuchten</td><td>Küchenarbeitslampe</td></tr>
+        <tr><td>R12</td><td>Kronleuchter L2, nicht angeschlossen</td><td>Reserve Wohnzimmer; HA-Light standardmäßig aktiviert</td></tr>
+      </tbody>
+    </table>
+    <p class="small">Die Relais werden in Gruppen zu je acht über PCA9535 angesprochen: Board A 0x22 = R00–R07, Board B 0x23 = R08–R15, Board C 0x24 = R16–R23.</p>
+  </section>
+</main>
+</body>
+</html>

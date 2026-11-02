@@ -428,7 +428,7 @@ void publishInputState(int inputIndex);
 void setRelayState(int relayIndex, int state);
 void setCoverState(int coverIndex, const char* action);  // OPEN, CLOSE, STOP
 void setCoverPosition(int coverIndex, int targetPosition);  // 0-100%
-void updateCoverPosition(int coverIndex);
+void updateCoverPosition(int coverIndex, bool stopAtLimit = true);
 void checkScheduledCoverStop(int coverIndex);
 void checkNightlyCalibration();
 void loadMPR121State();
@@ -3854,7 +3854,7 @@ void setCoverState(int coverIndex, const char* action) {
   } 
   else if (strcmp(action, "STOP") == 0) {
     // Position vor dem Stop aktualisieren
-    updateCoverPosition(coverIndex);
+    updateCoverPosition(coverIndex, false);
     
     // Bewegung stoppen
     covers[coverIndex].isMoving = false;
@@ -3976,7 +3976,7 @@ void handleInputs() {
 
 // ===== Cover Position-Tracking Funktionen =====
 
-void updateCoverPosition(int coverIndex) {
+void updateCoverPosition(int coverIndex, bool stopAtLimit) {
   if (!covers[coverIndex].isMoving) return;
   
   unsigned long elapsed = millis() - covers[coverIndex].moveStartTime;
@@ -3992,6 +3992,8 @@ void updateCoverPosition(int coverIndex) {
   
   // Clamp 0-100%
   covers[coverIndex].position = constrain(covers[coverIndex].position, 0.0, 100.0);
+
+  if (!stopAtLimit) return;
   
   // Wenn Position Limit erreicht, automatisch stoppen
   if (covers[coverIndex].position >= 100.0 && covers[coverIndex].movingUp) {

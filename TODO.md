@@ -8,6 +8,7 @@ Für spätere Änderungen kann direkt eine ID genannt werden, zum Beispiel `P2.1
 - [x] **P1.1** `handleToggle()` in `src/main.cpp`: `r` auf den gültigen Bereich `0–23` prüfen, bevor `relayState[idx]` oder andere Arrays gelesen bzw. beschrieben werden. Fehlende, nichtnumerische und ungültige Werte mit HTTP 400 beantworten.
 - [x] **P1.2** Arrayindizes aus HTTP- und MQTT-Eingaben einheitlich strikt parsen und validieren. Ungültige HTTP-Indizes mit 400 beantworten; ungültige MQTT-Kommandos verwerfen.
 - [x] **P1.3** Regressionstest für `/toggle` mit fehlendem, negativem und zu großem `r` ergänzen.
+- [x] **P1.4** Rekursionsfehler der Rollladensteuerung behoben: Der STOP-Zweig aktualisiert die Position mit `updateCoverPosition(coverIndex, false)`, ohne erneut einen Endlagen-STOP auszulösen. Reguläre Positionsupdates stoppen weiterhin automatisch bei 0/100 %. Firmware-Build erfolgreich; beide Produktionsfunktionen auf dem Host mit simulierten Relais für beide Rollos geprüft: 0 %, 100 %, manueller und wiederholter STOP, OPEN bei bereits 100 % (Startfall der Nachtkalibrierung) und RESET. Vollständiger 23-Uhr-Ablauf auf Hardware noch zu prüfen; der beobachtete Ausfall bleibt ohne Reset-/Absturzlog nicht eindeutig zugeordnet.
 
 ## Priorität 2: Eingangs- und Protokolldaten prüfen
 
