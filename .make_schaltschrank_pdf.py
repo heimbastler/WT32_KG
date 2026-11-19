@@ -98,13 +98,14 @@ def pdf_escape_stream(data):
 def build_pdf(image_path, output_path):
     margin = 28
     draw_text(margin, 30, "WT32-KG | Schaltschrank-Aushang", size=20, bold=True)
-    draw_text(margin, 46, "Steuerung: WT32-ETH01   |   Netzwerk: Ethernet   |   Stand: 01.11.2026",
+    draw_text(margin, 46, "Steuerung: WT32-ETH01   |   Netzwerk: Ethernet   |   Stand: 19.11.2026",
               size=8.5, rgb=(0.31, 0.38, 0.42))
 
-    warning = ("Wichtiger Codeabgleich: Die vor Ort abgelesene Relaisliste stimmt bei den Rollläden nicht mit der aktuellen Firmware überein. "
-               "R00/R01 und R02/R03 sind in der Firmware jeweils in umgekehrter Fahrtrichtung benannt und angesteuert. "
-               "R12 ist laut Schaltschrankliste Kronleuchter L2 (nicht angeschlossen), im Code aber Reserve Wohnzimmer und als "
-               "Home-Assistant-Light aktiviert. Vor Bedienung dieser Ausgänge Firmware und reale Verdrahtung abgleichen.")
+    warning = ("Wichtiger Codeabgleich: Relaisliste und Quellcode unterscheiden sich bei den Rollladenrichtungen: "
+               "Laut Liste R00/R02 = runter, R01/R03 = hoch; im Code OPEN = R00/R02, CLOSE = R01/R03. "
+               "Reale Fahrtrichtung und aufgespielte Firmware sind nicht geprüft. R12 ist laut Liste „Kronleuchter L2“ "
+               "ohne Lampenanschluss; im Code standardmäßig „Reserve Wohnzimmer“, HA-Typ „light“, aktiviert. "
+               "Gespeicherte Namen und HA-Einstellungen können abweichen. Zuordnung vor Bedienung fachgerecht prüfen lassen.")
     rect(margin, 56, PAGE_W - margin * 2, 55, fill=(1.0, 0.97, 0.95), stroke=(0.74, 0.25, 0.21), line_width=1)
     rect(margin, 56, 4, 55, fill=(0.74, 0.25, 0.21))
     draw_paragraph(margin + 13, 72, warning, PAGE_W - margin * 2 - 28, size=8.1, leading=10.4)
@@ -140,10 +141,10 @@ def build_pdf(image_path, output_path):
                    "Das Passwort ist absichtlich nicht auf diesem Blatt hinterlegt.", left_w, size=7.1, leading=9,
                    rgb=(0.31, 0.38, 0.42))
 
-    draw_text(right_x, 132, "Relaiszuordnung laut Schaltschrank", size=11, bold=True)
+    draw_text(right_x, 132, "Relaiszuordnung laut RELAIS.md", size=11, bold=True)
     relay_rows = [
-        ("R00", "<044>", "Fensterjalousie runter"),
-        ("R01", "<047>", "Fensterjalousie hoch"),
+        ("R00", "<047>", "Fensterjalousie runter"),
+        ("R01", "<044>", "Fensterjalousie hoch"),
         ("R02", "<045>", "Türjalousie runter"),
         ("R03", "<046>", "Türjalousie hoch"),
         ("R04", "<043>", "Außenlampe Garten"),
@@ -155,25 +156,28 @@ def build_pdf(image_path, output_path):
         ("R10", "<009>", "Trägerlampen / Tisch"),
         ("R11", "<033>", "Kronleuchter"),
         ("R12", "<034>", "Kronleuchter L2, nicht an Lampe angeschlossen"),
-        ("R13–R15", "—", "In RELAIS.md nicht zugeordnet"),
+        ("R13–R15", "—", "Frei / nicht belegt"),
         ("R16–R23", "—", "In RELAIS.md nicht aufgeführt"),
     ]
     relay_bottom = draw_table(right_x, 141, [62, 63, right_w - 125],
-                              ["Relais", "Kabel", "Physische Funktion laut RELAIS.md"], relay_rows,
+                              ["Relais", "Kabel", "Dokumentierte Funktion"], relay_rows,
                               [14] * len(relay_rows), font_size=7.1, header_size=7.0)
     firmware_title_top = relay_bottom + 17
-    draw_text(right_x, firmware_title_top, "Firmwareabweichungen", size=10, bold=True)
+    draw_text(right_x, firmware_title_top, "Dokumentations- und Firmwareabgleich", size=10, bold=True)
     firmware_rows = [
-        ("R00 / R01", "R00 runter, R01 hoch", "R00 hoch, R01 runter; Cover 0 nutzt R00 als open"),
-        ("R02 / R03", "R02 runter, R03 hoch", "R02 hoch, R03 runter; Cover 1 nutzt R02 als open"),
-        ("R07", "Arbeitsleuchten", "Küchenarbeitslampe"),
-        ("R12", "Kronleuchter L2, nicht angeschlossen", "Reserve Wohnzimmer; HA-Light standardmäßig aktiviert"),
+        ("R00 / R01", "R00 runter, R01 hoch", "Cover 0: OPEN = R00, CLOSE = R01"),
+        ("R02 / R03", "R02 runter, R03 hoch", "Cover 1: OPEN = R02, CLOSE = R03"),
+        ("R07", "Arbeitsleuchten", "Küchenarbeitslampe (Standardname; andere Benennung)"),
+        ("R12", "Kronleuchter L2, ohne Lampenanschluss", "Standard: Reserve Wohnzimmer; HA-Typ „light“, aktiviert"),
     ]
     firmware_top = firmware_title_top + 9
     firmware_bottom = draw_table(right_x, firmware_top, [70, 154, right_w - 224],
-                                 ["Relais", "Schaltschrankliste", "Aktueller Code in src/main.cpp"], firmware_rows,
+                                 ["Relais", "Liste laut RELAIS.md", "Zuordnung im Quellcode"], firmware_rows,
                                  [25, 25, 19, 25], font_size=6.8, header_size=6.8)
     draw_paragraph(right_x, firmware_bottom + 12,
+                   "Namen und HA-Einstellungen sind veränderbare Firmware-Standardwerte; gespeicherte Werte können abweichen. "
+                   "Eine Namensänderung ändert nicht die feste Relaiszuordnung der Cover. "
+                   "Quellen: RELAIS.md und src/main.cpp (Quellcode, kein Hardware-Nachweis). "
                    "PCA9535: Board A 0x22 = R00–R07, Board B 0x23 = R08–R15, Board C 0x24 = R16–R23.",
                    right_w, size=6.8, leading=8, rgb=(0.31, 0.38, 0.42))
 

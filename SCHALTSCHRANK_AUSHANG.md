@@ -1,8 +1,8 @@
 # WT32-KG | Schaltschrank-Aushang
 
-**Steuerung:** WT32-ETH01 · **Netzwerk:** Ethernet · **Stand:** 01.11.2026
+**Steuerung:** WT32-ETH01 · **Netzwerk:** Ethernet · **Stand:** 19.11.2026
 
-> **Wichtiger Codeabgleich:** Die vor Ort abgelesene Relaisliste stimmt bei den Rollläden nicht mit der aktuellen Firmware überein. R00/R01 und R02/R03 sind in der Firmware jeweils in umgekehrter Fahrtrichtung benannt und angesteuert. R12 ist laut Schaltschrankliste Kronleuchter L2 (nicht angeschlossen), im Code aber „Reserve Wohnzimmer“ und als Home-Assistant-Light aktiviert. Vor Bedienung dieser Ausgänge Firmware und reale Verdrahtung abgleichen.
+> **Wichtiger Codeabgleich:** Relaisliste und Quellcode unterscheiden sich bei den Rollladenrichtungen: Laut Liste R00/R02 = runter, R01/R03 = hoch; im Code OPEN = R00/R02, CLOSE = R01/R03. Reale Fahrtrichtung und aufgespielte Firmware sind nicht geprüft. R12 ist laut Liste „Kronleuchter L2“ ohne Lampenanschluss; im Code standardmäßig „Reserve Wohnzimmer“, HA-Typ „light“, aktiviert. Gespeicherte Namen und HA-Einstellungen können abweichen. Zuordnung vor Bedienung fachgerecht prüfen lassen.
 
 ## Weboberfläche
 
@@ -27,12 +27,12 @@
 
 Broker, Port und Zugangsdaten können über die MQTT-Seite geändert werden und werden im ESP32 gespeichert. Das Passwort ist absichtlich nicht auf diesem Blatt hinterlegt.
 
-## Relaiszuordnung laut Schaltschrank
+## Relaiszuordnung laut RELAIS.md
 
-| Relais | Kabel | Physische Funktion laut `RELAIS.md` |
+| Relais | Kabel | Dokumentierte Funktion |
 | --- | --- | --- |
-| R00 | `<044>` | Fensterjalousie runter |
-| R01 | `<047>` | Fensterjalousie hoch |
+| R00 | `<047>` | Fensterjalousie runter |
+| R01 | `<044>` | Fensterjalousie hoch |
 | R02 | `<045>` | Türjalousie runter |
 | R03 | `<046>` | Türjalousie hoch |
 | R04 | `<043>` | Außenlampe Garten |
@@ -44,16 +44,18 @@ Broker, Port und Zugangsdaten können über die MQTT-Seite geändert werden und 
 | R10 | `<009>` | Trägerlampen / Tisch |
 | R11 | `<033>` | Kronleuchter |
 | R12 | `<034>` | Kronleuchter L2, nicht an Lampe angeschlossen |
-| R13–R15 | — | In `RELAIS.md` nicht zugeordnet |
+| R13–R15 | — | Frei / nicht belegt |
 | R16–R23 | — | In `RELAIS.md` nicht aufgeführt |
 
-## Firmwareabweichungen
+## Dokumentations- und Firmwareabgleich
 
-| Relais | Schaltschrankliste | Aktueller Code in `src/main.cpp` |
+| Relais | Liste laut `RELAIS.md` | Zuordnung im Quellcode |
 | --- | --- | --- |
-| R00 / R01 | R00 runter, R01 hoch | R00 hoch, R01 runter; Cover 0 nutzt R00 als „open“ |
-| R02 / R03 | R02 runter, R03 hoch | R02 hoch, R03 runter; Cover 1 nutzt R02 als „open“ |
-| R07 | Arbeitsleuchten | Küchenarbeitslampe |
-| R12 | Kronleuchter L2, nicht angeschlossen | Reserve Wohnzimmer; HA-Light standardmäßig aktiviert |
+| R00 / R01 | R00 runter, R01 hoch | Cover 0: OPEN = R00, CLOSE = R01 |
+| R02 / R03 | R02 runter, R03 hoch | Cover 1: OPEN = R02, CLOSE = R03 |
+| R07 | Arbeitsleuchten | Küchenarbeitslampe (Standardname; andere Benennung) |
+| R12 | Kronleuchter L2, ohne Lampenanschluss | Standard: Reserve Wohnzimmer; HA-Typ „light“, aktiviert |
 
-**Quelle der physischen Zuordnung:** [RELAIS.md](RELAIS.md), zuletzt vor Ort abgelesen. **Firmwareabgleich:** [src/main.cpp](src/main.cpp). Die Relais werden in Gruppen zu je acht über PCA9535 angesprochen: Board A `0x22` = R00–R07, Board B `0x23` = R08–R15, Board C `0x24` = R16–R23.
+Namen und HA-Einstellungen sind veränderbare Firmware-Standardwerte und können durch gespeicherte Werte ersetzt sein. Eine Namensänderung ändert nicht die feste Relaiszuordnung der Cover.
+
+**Quelle der dokumentierten Zuordnung:** [RELAIS.md](RELAIS.md). **Quellcodeabgleich:** [src/main.cpp](src/main.cpp), insbesondere `coverRelayPairs`, `relayNames`, `relayHAType` und `relayHAEnabled`. Die Relais werden in Gruppen zu je acht über PCA9535 angesprochen: Board A `0x22` = R00–R07, Board B `0x23` = R08–R15, Board C `0x24` = R16–R23.

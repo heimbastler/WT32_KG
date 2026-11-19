@@ -301,11 +301,22 @@ int main() {
       server._finalizeResponse();
       assert(wire == server._currentClient.bytes); // No duplicate terminal chunk.
       std::string body = decode(wire, version != 0);
+      assert(body.find(".info-box{background:#1a237e;border-color:#3f51b5;margin:15px 0;}") != std::string::npos);
+      assert(body.find("<div class='card info-box' id='cover-timer-info'>") != std::string::npos);
+      assert(body.find("47 Sekunden (Fenster) bzw. 48 Sekunden (Tür)") != std::string::npos);
+      assert(body.find("nicht gemessen") != std::string::npos);
+      assert(body.find("Reset auf oben&ldquo;") != std::string::npos);
       for (int i = 4; i < 24; ++i) {
         assert(body.find("id='relay-" + std::to_string(i) + "'") != std::string::npos);
       }
+      const char *mcpPins[] = {
+        "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
+        "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7"
+      };
       for (int i = 0; i < 16; ++i) {
         assert(body.find("id='input-" + std::to_string(i) + "-status'") != std::string::npos);
+        assert(body.find("<tr><td>IN" + std::to_string(i) + " (" + mcpPins[i] + ")</td>")
+               != std::string::npos);
       }
       for (int i = 0; i < 2; ++i) {
         for (const char *action : {"OPEN", "CLOSE", "STOP", "RESET"}) {
@@ -365,6 +376,8 @@ int main() {
       editPeak = std::max(editPeak, String::maxLength);
       editReservation = std::max(editReservation, String::maxReservation);
       std::string body = decode(server._currentClient.bytes, version != 0);
+      assert(body.find("<div class='card info-box' id='auto-calibration-info'>") != std::string::npos);
+      assert(body.find("<p class='info-title'><b>⏰ Auto-Kalibrierung:</b></p>") != std::string::npos);
       const auto wire = server._currentClient.bytes;
       server._finalizeResponse();
       assert(wire == server._currentClient.bytes);
@@ -386,6 +399,31 @@ int main() {
   }
   std::cout << "PASS: 16 Edit responses; all HA types/flags and save controls; maximum String "
             << editPeak << " bytes, reservation " << editReservation << " bytes\n";
+  for (int clients : {0, 1}) {
+    for (bool pairing : {false, true}) {
+      espnowClientCount = clients;
+      espnowPairingMode = pairing;
+      server = WebServer();
+      handleESPNow();
+      const auto body = decode(server._currentClient.bytes, false);
+      assert(body.find("<div class='card info-box' id='espnow-howto'>") != std::string::npos);
+      assert(body.find("src/espnow_gateway.h") != std::string::npos);
+      assert(body.find("Gateway-Neustart erneut pairen") != std::string::npos);
+      assert(body.find("endet derzeit nicht automatisch") != std::string::npos);
+      assert(body.find("<code>00:11:22:33:44:55</code>") != std::string::npos);
+      assert(body.find(pairing ? "Pairing AKTIV" : "Pairing aktivieren") != std::string::npos);
+      assert(body.find("background:#e3f2fd") == std::string::npos);
+    }
+  }
+  server = WebServer();
+  handleMQTT();
+  const auto mqttInfo = decode(server._currentClient.bytes, false);
+  assert(mqttInfo.find("<div class='card info-box' id='ha-integration-info'>") != std::string::npos);
+  assert(mqttInfo.find("<p class='info-title'><b>📌 Home Assistant Integration:</b></p>") != std::string::npos);
+  assert(mqttInfo.find("<code>topic&amp;base</code>") != std::string::npos);
+  assert(mqttInfo.find("<code>home&amp;assistant</code>") != std::string::npos);
+  assert(mqttInfo.find("LED- und AC-Dimmer") != std::string::npos);
+  std::cout << "PASS: shared blue info boxes, cover timer/reset explanations, HA guidance and ESP-NOW how-to with zero/one client and both pairing modes\n";
   for (auto handler : {handleLEDDimmer, handleACDimmer}) {
     for (const char *value : {"0", "50", "100"}) {
       server = WebServer();
@@ -458,6 +496,9 @@ int main() {
     espnowClients[0].type = CLIENT_TYPE_SENSOR;
     espnowClients[0].online = true;
     server = WebServer();
+    handleHome();
+    const String home = decode(server._currentClient.bytes, true);
+    server = WebServer();
     handleEdit();
     const String edit = decode(server._currentClient.bytes, true);
     const size_t editStart = edit.value.rfind("<script>") + 8;
@@ -508,6 +549,7 @@ int main() {
     for (char c = 0; c < 0x20; ++c) controls += c;
     std::ofstream escaping(std::string(directory) + "/web-escaping.json");
     escaping << "{\"name\":\"" << escapeJSONString(hostile).value
+             << "\",\"home\":\"" << escapeJSONString(home).value
              << "\",\"edit\":\"" << escapeJSONString(edit).value
              << "\",\"mqtt\":\"" << escapeJSONString(mqtt).value
              << "\",\"espnow\":\"" << escapeJSONString(espnow).value

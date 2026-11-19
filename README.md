@@ -97,6 +97,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 - `INTA/INTB`: Verbunden mit GPIO39
 
 **Eingangsverarbeitung:**
+- Die Home-Tabelle zeigt in der ersten Spalte zusätzlich den MCP-Pin: `IN0 (A0)` bis `IN7 (A7)` und `IN8 (B0)` bis `IN15 (B7)` (Port GPA bzw. GPB).
 - Alle 16 Eingänge werden bei Interrupts und zusätzlich alle 20 ms nachgelesen, soweit die Hauptschleife dies zulässt. Web-UI und MQTT erhalten weiterhin die gelesenen Rohzustände.
 - EG/KG: Erst eine für mindestens 60 ms unverändert beobachtete Schalterkombination toggelt das jeweilige Flurlicht einmal. Öffnen und Schließen sind Schaltaktionen, keine feste Ein-/Aus-Zuordnung.
 - Küche: Die bisherige Tasterlogik bleibt erhalten (50 ms Entprellung, Toggle bei LOW → HIGH).
@@ -366,8 +367,9 @@ Siehe GPIO-Haupttabelle für IRQ-Pin-Zuordnungen:
   - Langer Touch: Kontinuierliches Dimmen up/down
 
 ### 🎚️ Rollladensteuerung
-- **[Fensterrollo hoch](src/main.cpp#L261) / [runter](src/main.cpp#L270)** - Automatische Auf/Ab-Steuerung mit Zeitbegrenzung (60s)
-- **[Türrollo hoch](src/main.cpp#L279) / [runter](src/main.cpp#L288)** - Automatische Auf/Ab-Steuerung mit Zeitbegrenzung (60s)
+- **Fensterrollo** - [Cover-Steuerung](src/main.cpp) mit 47 s hinterlegter voller Fahrzeit
+- **Türrollo** - [Cover-Steuerung](src/main.cpp) mit 48 s hinterlegter voller Fahrzeit
+- Cover-Positionen werden aus der Fahrzeit geschätzt, nicht gemessen. Automatischer Stopp an der berechneten Endposition bzw. am Positionsziel; „Reset auf oben“ fährt für die volle hinterlegte Fahrzeit nach oben und setzt die Referenz auf 100%.
 
 ### 🌐 Web-Interface
 - **[HTTP Webserver](src/main.cpp#L174)** auf Port 80
@@ -406,6 +408,8 @@ Das System bietet eine intuitive Web-Oberfläche zur Steuerung aller angeschloss
 - **[Live-Status-Anzeige](src/main.cpp#L224)** (EIN/AUS)
 - **[Eingangsstatus](src/main.cpp#L232)** der 16 digitalen Eingänge
 - **[Toggle-Funktion](src/main.cpp#L241)** per Klick
+
+**Blaue Infoboxen:** Home erklärt Rollladen-Fahrzeiten (Fenster 47 s, Tür 48 s), zeitbasierte Position, Reset und nächtliche Kalibrierung. Edit zeigt die Auto-Kalibrierung im selben Stil. MQTT erklärt die Home-Assistant-Integration; ESP-NOW enthält eine Anleitung für kompatible Client-Firmware und Pairing, einschließlich manueller Deaktivierung und erneutem Pairing nach Gateway-Neustart. Die Infoboxen ändern keine Steuerungsabläufe oder Laufzeiten.
 
 ### 📋 Relais-Zuordnung
 - **[Relaisnamen Array](src/main.cpp#L70)** - Übersicht aller 24 Relais mit Beschreibung

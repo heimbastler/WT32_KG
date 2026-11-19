@@ -2254,6 +2254,11 @@ static const char HTML_HEADER_START[] PROGMEM =
   ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}"
   ".btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}"
   ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}"
+  ".info-box{background:#1a237e;border-color:#3f51b5;margin:15px 0;}"
+  ".info-box p,.info-box li{margin:5px 0;font-size:11px;color:#aaa;}"
+  ".info-box .info-title{font-size:12px;color:#90caf9;}"
+  ".info-box ul,.info-box ol{margin:5px 0;padding-left:20px;}"
+  ".info-box code{background:#333;padding:2px 4px;overflow-wrap:anywhere;}"
   ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}"
   ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}"
   ".rollo-status{margin-left:10px;color:#666;font-size:12px;}"
@@ -2723,6 +2728,21 @@ void handleHome() {
 
     "</div>"
 
+    "<div class='card info-box' id='cover-timer-info'>"
+    "<p class='info-title'><b>ℹ️ Rollladen-Timer &amp; Kalibrierung:</b></p>"
+    "<ul>"
+    "<li>Die Position wird aus der Fahrzeit berechnet, nicht gemessen: 0% = geschlossen, 100% = offen.</li>"
+    "<li>Eine volle Fahrt ist mit 47 Sekunden (Fenster) bzw. 48 Sekunden (Tür) hinterlegt. "
+    "An der berechneten Endposition stoppt das Cover automatisch; Positionsziele aus Home Assistant nutzen anteilige Fahrzeiten.</li>"
+    "<li>Stopp beendet die Fahrt. Bei ungenauer Anzeige fährt &bdquo;Reset auf oben&ldquo; "
+    "für die volle hinterlegte Fahrzeit nach oben und setzt die Referenz auf 100%.</li>"
+    "<li>Bei gültiger Uhrzeit startet täglich um 23:00 Uhr die Auto-Kalibrierung: "
+    "zuerst Fenster, 10 Sekunden später Tür. Die Uhrzeit wird per NTP synchronisiert.</li>"
+    "<li>Die Zeiten sind im Code hinterlegt, nicht in der Web-UI einstellbar. "
+    "Eine berechnete Position bestätigt keine reale Endlage; die Fahrtrichtungen müssen zur Verdrahtung passen.</li>"
+    "</ul>"
+    "</div>"
+
   // Lampen & Relais - alle R04-R23 in 2-spaltigem Grid
     "<h3>💡 Lampen & Relais</h3>"
     "<div class='card'>"
@@ -2766,7 +2786,7 @@ void handleHome() {
     String color = inputState[i] ? "lightcoral" : "lightgreen";
     String row;
     row.reserve(384);
-    row += "<tr><td>IN" + String(i) + "</td>";
+    row += "<tr><td>IN" + String(i) + " (" + (i < 8 ? "A" : "B") + String(i % 8) + ")</td>";
     row += "<td>" + escapeHTML(inputNames[i]) + "</td>";
     row += "<td id='input-" + String(i) + "-status' style='background-color:" + color + ";font-weight:bold;'>" + status + "</td></tr>";
     server.sendContent(row);
@@ -2920,13 +2940,32 @@ void handleESPNow() {
     html += "</table>";
     
     // Info-Box
-    html += "<div class='card' style='background:#e3f2fd;border-color:#2196F3;'>";
-    html += "<p style='margin:5px 0;font-size:12px;'><b>ℹ️ Gateway Status:</b></p>";
-    html += "<p style='margin:5px 0;font-size:12px;'>• Gepairt: " + String(espnowClientCount) + " Client(s)</p>";
-    html += "<p style='margin:5px 0;font-size:12px;'>• Pairing-Modus: " + String(espnowPairingMode ? "Aktiv" : "Inaktiv") + "</p>";
-    html += "<p style='margin:5px 0;font-size:12px;'>• Gateway MAC: " + WiFi.macAddress() + "</p>";
+    html += "<div class='card info-box'>";
+    html += "<p class='info-title'><b>ℹ️ Gateway Status:</b></p>";
+    html += "<p>• Gepairt: " + String(espnowClientCount) + " Client(s)</p>";
+    html += "<p>• Pairing-Modus: " + String(espnowPairingMode ? "Aktiv" : "Inaktiv") + "</p>";
+    html += "<p>• Gateway MAC: " + WiFi.macAddress() + "</p>";
     html += "</div>";
   }
+
+  html += F(
+    "<div class='card info-box' id='espnow-howto'>"
+    "<p class='info-title'><b>📡 ESP-NOW: How-to</b></p>"
+    "<ol>"
+    "<li>Client mit kompatibler ESP-NOW-Firmware vorbereiten: Nachrichtenformat aus "
+    "<code>src/espnow_gateway.h</code> und denselben Funkkanal wie das Gateway verwenden.</li>"
+    "<li>Oben &bdquo;Pairing aktivieren&ldquo; wählen und anschließend das Pairing am Client starten. "
+    "Der Client muss eine Pairing-Anfrage mit Namen und Gerätetyp senden.</li>"
+    "<li>Diese Seite neu laden: Der Client erscheint in der Liste. Unter &bdquo;Details&ldquo; "
+    "lassen sich Status und empfangene Werte prüfen.</li>"
+    "<li>Pairing anschließend wieder deaktivieren; der Gateway-Modus endet derzeit nicht automatisch.</li>"
+    "</ol>"
+    "<p>Die Client-Liste liegt nur im RAM: Nach einem Gateway-Neustart erneut pairen. "
+    "Ohne Nachrichten für mehr als 60 Sekunden wird ein Client bei der nächsten Timeout-Prüfung als offline markiert.</p>"
+    "<p>ESP-NOW nutzt das WiFi-Funkmodul; Web-UI und MQTT laufen weiterhin über Ethernet.</p>"
+  );
+  html += "<p>Gateway-WiFi-MAC für die Client-Konfiguration: <code>" + WiFi.macAddress() + "</code></p>";
+  html += "</div>";
   
   html += getHTMLFooter();
   server.send(200, "text/html; charset=UTF-8", html);
@@ -3137,12 +3176,13 @@ void handleEdit() {
 
   // Info zur nächtlichen Kalibrierung
   server.sendContent_P(PSTR(
-    "<div class='card' style='background:#1a237e;border-color:#3f51b5;margin:15px 0;'>"
-    "<p style='margin:5px 0;font-size:12px;color:#90caf9;'><b>⏰ Auto-Kalibrierung:</b></p>"
-    "<p style='margin:5px 0;font-size:11px;color:#aaa;'>"
+    "<div class='card info-box' id='auto-calibration-info'>"
+    "<p class='info-title'><b>⏰ Auto-Kalibrierung:</b></p>"
+    "<p>"
     "• Täglich um <b>23:00 Uhr</b> fahren alle Covers automatisch auf 100%<br>"
     "• Position wird neu kalibriert (verhindert Drift durch Laständerungen)<br>"
-    "• NTP-Zeit wird von pool.ntp.org synchronisiert</p>"
+    "• NTP-Zeit wird von pool.ntp.org synchronisiert; nur bei gültiger Uhrzeit<br>"
+    "• Fahrzeiten und Reset-Funktion sind auf Home unter &bdquo;Rollladen-Timer &amp; Kalibrierung&ldquo; erklärt</p>"
     "</div>"
 
 
@@ -3694,12 +3734,13 @@ void handleMQTT() {
   html += "</form>";
   
   // Info-Box
-  html += "<div class='card' style='background:#1a2332;border-color:#1fa3ec;'>";
-  html += "<p style='margin:5px 0;font-size:11px;'><b>📌 Home Assistant Integration:</b></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Base Topic: <code style='background:#333;padding:2px 4px;'>" + escapeHTML(String(MQTT_BASE_TOPIC)) + "</code></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Discovery Prefix: <code style='background:#333;padding:2px 4px;'>" + escapeHTML(String(MQTT_DISCOVERY_PREFIX)) + "</code></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Entities: 20 Lights/Switches (R04-R23), 2 Covers, 16 Binary Sensors, 1 Switch (MPR121)</p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Auto-Discovery beim Boot</p>";
+  html += "<div class='card info-box' id='ha-integration-info'>";
+  html += "<p class='info-title'><b>📌 Home Assistant Integration:</b></p>";
+  html += "<p>• MQTT hier aktivieren und in Home Assistant die MQTT-Integration mit demselben Broker einrichten.</p>";
+  html += "<p>• Base Topic: <code>" + escapeHTML(String(MQTT_BASE_TOPIC)) + "</code></p>";
+  html += "<p>• Discovery Prefix: <code>" + escapeHTML(String(MQTT_DISCOVERY_PREFIX)) + "</code></p>";
+  html += "<p>• Verfügbar je nach Freigabe unter Edit: Relais R04-R23, 2 Covers, 16 Eingänge, MPR121-Schalter sowie LED- und AC-Dimmer.</p>";
+  html += "<p>• Auto-Discovery nach MQTT-Verbindung und beim Speichern der Geräte-Konfiguration; nur freigegebene Geräte werden angekündigt.</p>";
   html += "</div>";
   
   html += "</div>";
