@@ -83,11 +83,11 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 **Port A (GPA0-GPA7) - Schalter/Taster:**
 - `GPA0`: IR-Switch Küche EG11 - Linker Taster (Input mit Pull-Up)
 - `GPA1`: IR-Switch Küche EG11 - Rechter Taster (Input mit Pull-Up)
-- `GPA2`: Kreuzschaltung EG1 - Taster Treppe OG (Input mit Pull-Up)
-- `GPA3`: Kreuzschaltung EG2 - Taster Eingang EG (Input mit Pull-Up)
-- `GPA4`: Kreuzschaltung KG1 - Taster Tür Schlafzimmer (Input mit Pull-Up)
-- `GPA5`: Kreuzschaltung KG2 - Taster Bad KG (Input mit Pull-Up)
-- `GPA6`: Kreuzschaltung KG3 - Taster Treppe KG-EG (Input mit Pull-Up)
+- `GPA2`: Kreuzschaltung EG1 - Schalter Treppe OG (Input mit Pull-Up)
+- `GPA3`: Kreuzschaltung EG2 - Schalter Eingang EG (Input mit Pull-Up)
+- `GPA4`: Kreuzschaltung KG1 - Schalter Tür Schlafzimmer (Input mit Pull-Up)
+- `GPA5`: Kreuzschaltung KG2 - Schalter Bad KG (Input mit Pull-Up)
+- `GPA6`: Kreuzschaltung KG3 - Schalter Treppe KG-EG (Input mit Pull-Up)
 - `GPA7`: Reserve (früher MPR121 IRQ, jetzt auf separatem ESP32 Pin)
 
 **Port B (GPB0-GPB7) - Reserve:**
@@ -95,6 +95,15 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 
 **MCP23017 Interrupt:**
 - `INTA/INTB`: Verbunden mit GPIO39
+
+**Eingangsverarbeitung:**
+- Alle 16 Eingänge werden bei Interrupts und zusätzlich alle 20 ms nachgelesen, soweit die Hauptschleife dies zulässt. Web-UI und MQTT erhalten weiterhin die gelesenen Rohzustände.
+- EG/KG: Erst eine für mindestens 60 ms unverändert beobachtete Schalterkombination toggelt das jeweilige Flurlicht einmal. Öffnen und Schließen sind Schaltaktionen, keine feste Ein-/Aus-Zuordnung.
+- Küche: Die bisherige Tasterlogik bleibt erhalten (50 ms Entprellung, Toggle bei LOW → HIGH).
+- Während der fünf Sekunden Boot-Verzögerung und beim erstmaligen Freigeben werden stabile Zustände und Entprellkandidaten ohne Relaisaktion synchronisiert. Schaltvorgänge aus der Startphase werden nicht nachgeholt.
+- Die Softwarefilterung ersetzt bei langen Leitungen keine geeignete elektrische Beschaltung; Störungen ab 60 ms können weiterhin als Schaltvorgang gelten.
+
+Host-Regression ohne Hardware: `sh test/host/test_mcp_inputs.sh`.
 
 ⚠️ **WICHTIG - Level Shifter erforderlich für MPR121 Touchboards!**
 Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mit **3.3V Logik**.

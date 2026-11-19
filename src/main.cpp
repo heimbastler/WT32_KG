@@ -99,6 +99,7 @@
 #include <DallasTemperature.h>
 #include "espnow_gateway.h"  // ESP-NOW Gateway
 #include "index_validation.h"
+#include "html_utils.h"
 
 // --- TouchBoards Funktionsprototypen ---
 void initTouchBoards();
@@ -134,6 +135,7 @@ String getNetworkStatus();
 
 // ---------- MCP23017 Adresse für Switches/Eingänge ----------
 Adafruit_MCP23X17 mcpIn;  // Adresse 0x20 (Standard) - 16 digitale Ein-/Ausgänge
+bool mcpInputReady = false;
 
 // ---------- IR-Switch Küche Kabel EG11 ----------
 // Kabel EG11: br/ws = +5V, br = GND, grn = links, grn/ws = rechts
@@ -193,7 +195,13 @@ const unsigned long irSwitchDebounceInterval = 50;
 
 // ---------- Kreuzschaltung Zustand ----------
 uint8_t kreuzstateEG = 1;         // EG Kreuzschaltung Zustand (Bit-kombiniert)
+uint8_t kreuzCandidateEG = 1;
+unsigned long kreuzCandidateSinceEG = 0;
 uint8_t kreuzstateKG = 1;         // KG Kreuzschaltung Zustand (Bit-kombiniert)
+uint8_t kreuzCandidateKG = 1;
+unsigned long kreuzCandidateSinceKG = 0;
+const unsigned long kreuzDebounceInterval = 60;
+const unsigned long mcpPollInterval = 20;
 
 // ---------- Boot-Verzögerung für Kreuzschaltungen ----------
 unsigned long bootTime = 0;       // Zeitstempel beim Boot
@@ -470,6 +478,8 @@ String getTemperatureHTML();
 void handleIRSwitchKitchen();
 
 // --- Kreuzschaltung Funktionsprototypen ---
+void synchronizeMCPInputHandlers();
+void processMCPInputs();
 void handleKreuzschaltungEG();
 void handleKreuzschaltungKG();
 
@@ -1188,7 +1198,7 @@ void processMQTTDiscovery() {
       String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       
       String payload = "{";
-      payload += "\"name\":\"" + name + "\",";
+      payload += "\"name\":\"" + escapeJSONString(name) + "\",";
       payload += "\"unique_id\":\"" + deviceId + "\",";
       payload += "\"object_id\":\"" + objectId + "\",";
       payload += "\"state_topic\":\"" + stateTopic + "\",";
@@ -1209,7 +1219,7 @@ void processMQTTDiscovery() {
       String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       
       String payload = "{";
-      payload += "\"name\":\"" + name + "\",";
+      payload += "\"name\":\"" + escapeJSONString(name) + "\",";
       payload += "\"unique_id\":\"" + deviceId + "\",";
       payload += "\"object_id\":\"" + objectId + "\",";
       payload += "\"state_topic\":\"" + stateTopic + "\",";
@@ -1230,7 +1240,7 @@ void processMQTTDiscovery() {
       String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       
       String payload = "{";
-      payload += "\"name\":\"" + name + "\",";
+      payload += "\"name\":\"" + escapeJSONString(name) + "\",";
       payload += "\"unique_id\":\"" + deviceId + "\",";
       payload += "\"object_id\":\"" + objectId + "\",";
       payload += "\"command_topic\":\"" + commandTopic + "\",";
@@ -1255,7 +1265,7 @@ void processMQTTDiscovery() {
       String commandTopic = String(MQTT_BASE_TOPIC) + "/relay/" + String(i) + "/set";
       
       String payload = "{";
-      payload += "\"name\":\"" + name + "\",";
+      payload += "\"name\":\"" + escapeJSONString(name) + "\",";
       payload += "\"unique_id\":\"" + deviceId + "\",";
       payload += "\"object_id\":\"" + objectId + "\",";
       payload += "\"state_topic\":\"" + stateTopic + "\",";
@@ -1285,7 +1295,7 @@ void processMQTTDiscovery() {
   String mpr121CommandTopic = String(MQTT_BASE_TOPIC) + "/mpr121/set";
   
   String mpr121Payload = "{";
-  mpr121Payload += "\"name\":\"" + mpr121Name + "\",";
+  mpr121Payload += "\"name\":\"" + escapeJSONString(mpr121Name) + "\",";
   mpr121Payload += "\"unique_id\":\"" + mpr121DeviceId + "\",";
   mpr121Payload += "\"object_id\":\"mpr121_enable\",";
   mpr121Payload += "\"state_topic\":\"" + mpr121StateTopic + "\",";
@@ -1319,7 +1329,7 @@ void processMQTTDiscovery() {
     String ledBrightnessCommandTopic = String(MQTT_BASE_TOPIC) + "/led_dimmer/brightness/set";
     
     String ledPayload = "{";
-    ledPayload += "\"name\":\"" + ledDimmerName + "\",";
+    ledPayload += "\"name\":\"" + escapeJSONString(ledDimmerName) + "\",";
     ledPayload += "\"unique_id\":\"" + ledDeviceId + "\",";
     ledPayload += "\"object_id\":\"" + ledObjectId + "\",";
     ledPayload += "\"state_topic\":\"" + ledStateTopic + "\",";
@@ -1358,7 +1368,7 @@ void processMQTTDiscovery() {
     String acBrightnessCommandTopic = String(MQTT_BASE_TOPIC) + "/ac_dimmer/brightness/set";
     
     String acPayload = "{";
-    acPayload += "\"name\":\"" + acDimmerName + "\",";
+    acPayload += "\"name\":\"" + escapeJSONString(acDimmerName) + "\",";
     acPayload += "\"unique_id\":\"" + acDeviceId + "\",";
     acPayload += "\"object_id\":\"" + acObjectId + "\",";
     acPayload += "\"state_topic\":\"" + acStateTopic + "\",";
@@ -1411,7 +1421,7 @@ void processMQTTDiscovery() {
     Serial.println("  📡 Sende Discovery für Cover " + String(i) + " auf Topic: " + discoveryTopic);
     
     String payload = "{";
-    payload += "\"name\":\"" + coverName + "\",";
+    payload += "\"name\":\"" + escapeJSONString(coverName) + "\",";
     payload += "\"unique_id\":\"" + coverDeviceId + "\",";
     payload += "\"object_id\":\"" + coverObjectId + "\",";
     payload += "\"command_topic\":\"" + commandTopic + "\",";
@@ -1473,7 +1483,7 @@ void processMQTTDiscovery() {
     String stateTopic = String(MQTT_BASE_TOPIC) + "/input/" + String(i) + "/state";
     
     String payload = "{";
-    payload += "\"name\":\"" + inputName + "\",";
+    payload += "\"name\":\"" + escapeJSONString(inputName) + "\",";
     payload += "\"unique_id\":\"" + inputDeviceId + "\",";
     payload += "\"object_id\":\"" + inputObjectId + "\",";
     payload += "\"state_topic\":\"" + stateTopic + "\",";
@@ -1825,6 +1835,7 @@ void setup() {
   if (!mcpIn.begin_I2C(0x20)) {
     Serial.println("❌ ERROR: MCP23017 nicht gefunden auf Adresse 0x20!");
   } else {
+    mcpInputReady = true;
     Serial.println("✅ MCP23017 initialisiert auf Adresse 0x20");
     
     // Debugging: Erste Lese zu sehen ob I2C funktioniert
@@ -1936,17 +1947,9 @@ void setup() {
   }
   
   // KRITISCH: Kreuzschaltungs-Zustände synchronisieren BEVOR Handler laufen
-  kreuzstateEG = inputState[KREUZ_EG1] | (inputState[KREUZ_EG2] << 1);
-  kreuzstateKG = inputState[KREUZ_KG1] | (inputState[KREUZ_KG2] << 1) | (inputState[KREUZ_KG3] << 2);
+  synchronizeMCPInputHandlers();
   Serial.printf("✅ Kreuzschaltungen initialisiert: EG=0x%02X, KG=0x%02X\n", kreuzstateEG, kreuzstateKG);
   
-  // KRITISCH: IR-Switch Zustände synchronisieren (verhindert Boot-Toggle)
-  lastIRSwitchLeft = inputState[IR_SWITCH_KITCHEN_LEFT];
-  lastIRSwitchRight = inputState[IR_SWITCH_KITCHEN_RIGHT];
-  irSwitchCandidateLeft = lastIRSwitchLeft;
-  irSwitchCandidateRight = lastIRSwitchRight;
-  irSwitchCandidateSinceLeft = millis();
-  irSwitchCandidateSinceRight = millis();
   Serial.printf("✅ IR-Switches initialisiert: Left=%d, Right=%d\n", lastIRSwitchLeft, lastIRSwitchRight);
   Serial.println("=========================================\n");
 
@@ -2130,109 +2133,7 @@ void loop() {
     lastTimeoutCheck = millis();
   }
   
-  // === MCP23017 POLLING - DEAKTIVIERT (nicht angeschlossen) ===
-  // =============================================================
-  // static unsigned long lastMcpPoll = 0;
-  // if (millis() - lastMcpPoll > 100) {
-  //   lastMcpPoll = millis();
-  //   
-  //   // Alle 16 Pins auslesen (DEBUG-Info)
-  //   uint16_t gpio_ab = mcpIn.readGPIOAB();
-  //   
-  //   // Einzelne Pins splitten
-  //   uint8_t portA = gpio_ab & 0xFF;           // Bits 0-7 = GPA0-GPA7
-  //   uint8_t portB = (gpio_ab >> 8) & 0xFF;    // Bits 8-15 = GPB0-GPB7
-  //   
-  //   // Debug Output (nur wenn sich was ändert oder alle 3 Sekunden)
-  //   static unsigned long lastDebugPrint = 0;
-  //   static uint16_t lastGpioPrint = 0xFFFF;
-  //   if (gpio_ab != lastGpioPrint || millis() - lastDebugPrint > 3000) {
-  //     Serial.print("📊 MCP23017 GPIO Status | Port A: 0x");
-  //     Serial.print(portA, HEX);
-  //     Serial.print(" Port B: 0x");
-  //     Serial.println(portB, HEX);
-  //     
-  //     // Genaue Pin-Analyse für Port A (die einzigen momentan genutzten Pins):
-  //     Serial.print("   GPA: ");
-  //     for (int i = 0; i < 8; i++) {
-  //       Serial.print((portA >> i) & 1 ? "H" : "L");
-  //     }
-  //     Serial.println();
-  //     
-  //     lastGpioPrint = gpio_ab;
-  //     lastDebugPrint = millis();
-  //   }
-  //   
-  //   // Eingänge in inputState[] speichern (für Web-UI)
-  //   for (int i = 0; i < 8; i++) {
-  //     inputState[i] = (portA >> i) & 1;      // GPA0-GPA7 → inputState[0-7]
-  //     inputState[i + 8] = (portB >> i) & 1;  // GPB0-GPB7 → inputState[8-15]
-  //   }
-  //
-  //   // IR-Switch Küche Logik
-  //   handleIRSwitchKitchen();
-  //   handleKreuzschaltungEG();
-  //   handleKreuzschaltungKG();
-  // }
-  
-  // === MCP23017 INTERRUPT-GESTEUERTE VERARBEITUNG ===
-  if (mcpInterruptFlag) {
-    mcpInterruptFlag = false;  // Flag zurücksetzen
-    Serial.println("⚡ MCP23017 Interrupt ausgelöst!");
-    
-    // GPIO-Status lesen (cleared automatisch den Interrupt)
-    uint16_t gpio_ab = mcpIn.readGPIOAB();
-    uint8_t portA = gpio_ab & 0xFF;
-    uint8_t portB = (gpio_ab >> 8) & 0xFF;
-    
-    // Debug: Welche Pins haben sich geändert
-    Serial.print("📊 GPIO: Port A=0x");
-    Serial.print(portA, HEX);
-    Serial.print(" Port B=0x");
-    Serial.println(portB, HEX);
-    
-    // Eingänge in inputState[] speichern (für Web-UI)
-    // State-Change Detection für MQTT Publishing
-    static uint8_t lastInputState[16] = {0};
-    bool stateChanged = false;
-    
-    for (int i = 0; i < 8; i++) {
-      uint8_t newStateA = (portA >> i) & 1;
-      uint8_t newStateB = (portB >> i) & 1;
-      
-      // Port A (IN00-IN07)
-      if (inputState[i] != newStateA) {
-        inputState[i] = newStateA;
-        lastInputState[i] = newStateA;
-        publishInputState(i);  // MQTT State publishen
-        stateChanged = true;
-      }
-      
-      // Port B (IN08-IN15)
-      if (inputState[i + 8] != newStateB) {
-        inputState[i + 8] = newStateB;
-        lastInputState[i + 8] = newStateB;
-        publishInputState(i + 8);  // MQTT State publishen
-        stateChanged = true;
-      }
-    }
-    
-    if (stateChanged) {
-      Serial.println("📡 Input States published via MQTT");
-    }
-    
-    // Schalter-Logik verarbeiten (nur nach Boot-Verzögerung)
-    if (millis() - bootTime > bootDelay) {
-      handleKreuzschaltungEG();
-      handleKreuzschaltungKG();
-    } else {
-      Serial.println("⏳ Boot-Verzögerung aktiv, Schaltlogik übersprungen");
-    }
-  }
-
-  if (millis() - bootTime > bootDelay) {
-    handleIRSwitchKitchen();
-  }
+  processMCPInputs();
   
   // === MPR121 INTERRUPT-GESTEUERTE VERARBEITUNG (VORBEREITET) ===
   // WENN AKTIVIERT: Uncomment die folgenden Zeilen und entferne Polling
@@ -2309,474 +2210,576 @@ void handleRoot() {
 }
 
 // ===== Gemeinsame HTML-Header-Funktion =====
-String getHTMLHeader(String activeTab) {
+static const char HTML_HEADER_START[] PROGMEM =
+  "<html><head>"
+  "<meta charset='UTF-8'>"
+  "<title>WT32-KG Controller</title>"
+  "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+  "<style>"
+// Tasmota Dark Mode Style
+  "body{font-family:Verdana,Arial,sans-serif;margin:0;padding:0;background:#1a1a1a;color:#eee;font-size:12px;}"
+  ".container{max-width:600px;margin:0 auto;background:#252525;overflow:hidden;}"
+  "h2{color:#eee;text-align:center;padding:12px 10px;font-size:16px;margin:0;background:#1fa3ec;font-weight:normal;}"
+  "h3{color:#eee;margin:12px 8px 8px 8px;border-left:2px solid #1fa3ec;padding-left:8px;font-size:14px;font-weight:normal;}"
+
+// Tab-Navigation (Tasmota-Style)
+  ".tabs{display:flex;background:#1a1a1a;margin:0;padding:0;list-style:none;border-bottom:1px solid #333;}"
+  ".tab{flex:1;text-align:center;padding:10px 5px;cursor:pointer;background:#1a1a1a;border:none;font-size:12px;color:#aaa;text-decoration:none;display:block;transition:background 0.2s;}"
+  ".tab:hover{background:#333;}"
+  ".tab.active{background:#1fa3ec;color:#fff;}"
+
+// Content Area
+  ".content{padding:8px;}"
+
+// Button Styles (Tasmota-ähnlich)
+  ".btn{padding:6px 10px;margin:2px;border:1px solid #333;border-radius:3px;cursor:pointer;font-size:12px;transition:all 0.2s;min-width:200px;display:inline-block;text-align:center;text-decoration:none;background:#444;color:#eee;}"
+  ".btn:hover{background:#555;}"
+  ".btn:active{transform:scale(0.98);}"
+  ".btn-on{background:#47c266;color:#fff;border-color:#47c266;}"
+  ".btn-on:hover{background:#5cd67a;}"
+  ".btn-off{background:#d43535;color:#fff;border-color:#d43535;}"
+  ".btn-off:hover{background:#e84848;}"
+  ".btn-rollo{background:#ff9800;color:#fff;border-color:#ff9800;}"
+  ".btn-rollo:hover{background:#ffaa33;}"
+  ".btn-neutral{background:#607D8B;color:#fff;border-color:#607D8B;}"
+  ".btn-neutral:hover{background:#738fa0;}"
+  ".btn-cover-open{background:#2e7d32;color:#fff;border-color:#2e7d32;}"
+  ".btn-cover-open:hover{background:#3a9440;}"
+  ".btn-cover-close{background:#c62828;color:#fff;border-color:#c62828;}"
+  ".btn-cover-close:hover{background:#d84343;}"
+  ".btn-cover-reset{background:#f9a825;color:#1b1b1b;border-color:#f9a825;font-weight:bold;}"
+  ".btn-cover-reset:hover{background:#ffb83a;}"
+
+// Layout Styles
+  ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}"
+  ".btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}"
+  ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}"
+  ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}"
+  ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}"
+  ".rollo-status{margin-left:10px;color:#666;font-size:12px;}"
+
+// Table Styles
+  "table{border-collapse:collapse;width:100%;margin:8px 0;font-size:11px;}"
+  "td,th{border:1px solid #333;padding:4px;text-align:center;}"
+  "th{background:#1a1a1a;font-weight:bold;color:#999;}"
+  "td{background:#2a2a2a;}"
+
+// Input Range Slider
+  "input[type='range']{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;background:#444;outline:none;margin:10px 0;}"
+  "input[type='range']::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;}"
+  "input[type='range']::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;border:none;}"
+
+// Labels
+  "label{color:#aaa;font-size:12px;}"
+  "label b{color:#eee;}"
+  "</style>"
+
+// JavaScript für AJAX-Requests ohne Seiten-Reload
+  "<script>"
+  "function toggleRelay(r,btnElement){"
+  "console.log('Toggle relay '+r);"
+// OPTIMISTIC UI: Button sofort umschalten für schnelles Feedback
+  "var btn=btnElement;"
+  "var wasOn=btn.classList.contains('btn-on')||btn.classList.contains('btn-neutral');"
+  "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');"
+// Sofort neuen Zustand anzeigen (optimistic)
+  "if(wasOn){"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}"
+  "}else{"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}"
+  "}"
+// Rollo-Pair optimistisch updaten (z.B. bei R0->R1 oder R2->R3)
+  "if(r>=0&&r<=3){"
+  "var pairIdx=(r==0)?1:(r==1)?0:(r==2)?3:2;"
+  "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+pairIdx+',this)\"]');"
+  "if(pairBtn&&!wasOn){"  // Nur wenn wir gerade starten (nicht stoppen)
+  "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');"
+  "pairBtn.classList.add('btn-rollo');"
+  "if(pairIdx==0){pairBtn.textContent='▲ Hoch';}"
+  "if(pairIdx==1){pairBtn.textContent='▼ Runter';}"
+  "if(pairIdx==2){pairBtn.textContent='▲ Hoch';}"
+  "if(pairIdx==3){pairBtn.textContent='▼ Runter';}"
+  "}"
+  "}"
+// Button-Text optimistisch updaten
+  "if(r==0){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}"
+  "if(r==1){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}"
+  "if(r==2){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}"
+  "if(r==3){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}"
+// Server-Request im Hintergrund
+  "fetch('/toggle?r='+r).then(function(response){"
+  "return response.json();"
+  "}).then(function(data){"
+  "console.log('Server confirmed state:'+data.state);"
+// Server-Status mit UI abgleichen (falls abweichend korrigieren)
+  "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');"
+  "if(data.state==1){"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}"
+  "else{btn.classList.add('btn-on');}"
+  "}else{"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}"
+  "else{btn.classList.add('btn-off');}"
+  "}"
+// Button-Text für Rollos updaten
+  "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}"
+  "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}"
+  "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}"
+  "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}"
+// Rollo-Pair: Anderen Button auch updaten (z.B. bei Fensterrollo R00<->R01)
+  "if(data.pair!==undefined){"
+  "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+data.pair+',this)\"]');"
+  "if(pairBtn){"
+  "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');"
+  "if(data.pairState==1){pairBtn.classList.add('btn-neutral');}"
+  "else{pairBtn.classList.add('btn-rollo');}"
+  "if(data.pair==0){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}"
+  "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}"
+  "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}"
+  "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}"
+  "}"
+  "}"
+// Rollo-Status-Anzeige updaten
+  "if(r==0||r==1){"
+  "var statusSpan=document.getElementById('fenster-status');"
+  "if(statusSpan){"
+  "if(data.state==1&&r==0){statusSpan.textContent=' (Fährt hoch)';}"
+  "else if(data.state==1&&r==1){statusSpan.textContent=' (Fährt runter)';}"
+  "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}"
+  "}"
+  "}"
+  "if(r==2||r==3){"
+  "var statusSpan=document.getElementById('tuer-status');"
+  "if(statusSpan){"
+  "if(data.state==1&&r==2){statusSpan.textContent=' (Fährt hoch)';}"
+  "else if(data.state==1&&r==3){statusSpan.textContent=' (Fährt runter)';}"
+  "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}"
+  "}"
+  "}"
+// Button-Text für normale Relais updaten (4-23)
+  "if(r>=4){"
+  "var text=btn.textContent;"
+  "if(text.includes(':')){"
+  "var parts=text.split(':');"
+  "parts[parts.length-1]=data.state==1?' EIN':' AUS';"
+  "btn.textContent=parts.join(':');"
+  "}"
+  "}"
+  "}).catch(function(error){"
+  "console.error('Toggle error:',error);"
+// Bei Fehler Button zurückschalten
+  "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');"
+  "if(wasOn){"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}"
+  "}else{"
+  "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}"
+  "}"
+  "});"
+  "}"
+// JavaScript für Cover-Steuerung (OPEN/CLOSE/STOP)
+  "function coverAction(coverIndex, action, btnElement) {"
+  "  console.log('Cover ' + coverIndex + ' Action: ' + action);"
+  "  "
+  "  fetch('/cover?idx=' + coverIndex + '&action=' + action)"
+  "  .then(function(response) { return response.json(); })"
+  "  .then(function(data) {"
+  "    console.log('Cover response:', data);"
+  "    updateHomeState();"
+  "  })"
+  "  .catch(function(error) {"
+  "    console.error('Cover error:', error);"
+  "    alert('Fehler bei Cover-Steuerung');"
+  "  });"
+  "}"
+  "function createDimmerSender(path,labelId){"
+  "var timer=null,busy=false,pending=false,ready=false,latest=0,retries=0,acknowledged=null;"
+  "function send(){"
+  "if(busy || !pending || !ready) return;"
+  "var value=latest; pending=false; ready=false; busy=true;"
+  "var controller=new AbortController();"
+  "var timeout=setTimeout(function(){controller.abort();},5000);"
+  "fetch(path+'?brightness='+value+'&ajax=1',{signal:controller.signal})"
+  ".then(function(response){"
+  "if(!response.ok) throw new Error('HTTP '+response.status);"
+  "return response.json();"
+  "}).then(function(data){"
+  "if(!data.success) throw new Error('Dimmer rejected value');"
+  "acknowledged=value; retries=0;"
+  "}).catch(function(error){"
+  "console.error('Dimmer update error:',error);"
+  "acknowledged=null;"
+  "if(!pending && latest===value && retries<1){"
+  "retries++; pending=true;"
+  "timer=setTimeout(function(){timer=null; ready=true; send();},1000);"
+  "}else if(!pending){alert('Dimmer konnte nicht gesetzt werden. Bitte erneut versuchen.');}"
+  "}).finally(function(){clearTimeout(timeout); busy=false; send();});"
+  "}"
+  "return function(value,commit){"
+  "var label=document.getElementById(labelId);"
+  "if(label) label.textContent=value+'%';"
+  "if(!pending && !busy && Number(value)===acknowledged && commit) return;"
+  "latest=Number(value); pending=true; retries=0;"
+  "clearTimeout(timer); timer=null; ready=!!commit;"
+  "if(ready) send();"
+  "else timer=setTimeout(function(){timer=null; ready=true; send();},250);"
+  "};"
+  "}"
+  "var updateLED=createDimmerSender('/led','led-brightness');"
+  "var updateKronleuchter=createDimmerSender('/kronleuchter','ac-brightness');"
+  "function homeElementVisible(el){return el && el.getClientRects().length>0;}"
+  "function setHomeText(id,text){"
+  "var el=document.getElementById(id);"
+  "if(homeElementVisible(el) && el.textContent!==text) el.textContent=text;"
+  "}"
+  "function updateCoverUiForIndex(i,c){"
+  "setHomeText('cover'+i+'-position',c.position+'%');"
+  "var status=c.resetPending?'Reset fährt auf 100%':c.openRelay==1?'Fährt hoch':c.closeRelay==1?'Fährt runter':'Gestoppt';"
+  "setHomeText('cover'+i+'-status','Status: '+status);"
+  "setHomeText('cover'+i+'-open',c.openRelay==1?'▲ Fährt hoch...':'▲ Öffnen');"
+  "setHomeText('cover'+i+'-close',c.closeRelay==1?'▼ Fährt runter...':'▼ Schließen');"
+  "}"
+  "function validHomeState(data){"
+  "var bit=function(v){return v===0 || v===1;};"
+  "return data && Array.isArray(data.relays) && data.relays.length===24 && data.relays.every(bit)"
+  " && Array.isArray(data.inputs) && data.inputs.length===16 && data.inputs.every(bit)"
+  " && Array.isArray(data.covers) && data.covers.length===2 && data.covers.every(function(c){"
+  "return c && Number.isFinite(c.position) && c.position>=0 && c.position<=100"
+  " && bit(c.openRelay) && bit(c.closeRelay) && typeof c.resetPending==='boolean';"
+  "});"
+  "}"
+  "function applyHomeState(data){"
+  "for(var i=0;i<2;i++) updateCoverUiForIndex(i,data.covers[i]);"
+  "for(var r=4;r<24;r++){"
+  "var btn=document.getElementById('relay-'+r);"
+  "if(!homeElementVisible(btn)) continue;"
+  "var on=data.relays[r]===1;"
+  "var wanted=on?'btn-on':'btn-off', other=on?'btn-off':'btn-on';"
+  "if(btn.classList.contains(other)) btn.classList.remove(other);"
+  "if(!btn.classList.contains(wanted)) btn.classList.add(wanted);"
+  "var parts=btn.textContent.split(':');"
+  "if(parts.length>1){"
+  "parts[parts.length-1]=on?' EIN':' AUS';"
+  "var text=parts.join(':');"
+  "if(btn.textContent!==text) btn.textContent=text;"
+  "}"
+  "}"
+  "for(var n=0;n<16;n++){"
+  "var cell=document.getElementById('input-'+n+'-status');"
+  "if(!homeElementVisible(cell)) continue;"
+  "var state=data.inputs[n]===1, label=state?'OPEN':'CLOSED', color=state?'lightcoral':'lightgreen';"
+  "if(cell.textContent!==label) cell.textContent=label;"
+  "if(cell.style.backgroundColor!==color) cell.style.backgroundColor=color;"
+  "}"
+  "}"
+  "var homePollTimer=null, homePollInFlight=false, homePollRefreshPending=false, homePollDelay=1000;"
+  "function homePollingVisible(){return !document.hidden && document.getElementById('cover0-position')!==null;}"
+  "function scheduleHomeState(delay){"
+  "clearTimeout(homePollTimer); homePollTimer=null;"
+  "if(homePollingVisible()) homePollTimer=setTimeout(updateHomeState,delay);"
+  "}"
+  "function updateHomeState(){"
+  "if(!homePollingVisible()) return;"
+  "if(homePollInFlight){homePollRefreshPending=true; return;}"
+  "clearTimeout(homePollTimer); homePollTimer=null;"
+  "homePollInFlight=true; homePollRefreshPending=false;"
+  "var controller=new AbortController(), success=false;"
+  "var timeout=setTimeout(function(){controller.abort();},5000);"
+  "fetch('/home_state',{cache:'no-store',signal:controller.signal})"
+  ".then(function(response){"
+  "if(!response.ok) throw new Error('HTTP '+response.status);"
+  "return response.json();"
+  "}).then(function(data){"
+  "if(!validHomeState(data)) throw new Error('Invalid home state');"
+  "if(homePollingVisible()) applyHomeState(data);"
+  "homePollDelay=1000; success=true;"
+  "}).catch(function(error){"
+  "console.error('Home update error:',error);"
+  "homePollDelay=Math.min(homePollDelay*2,8000);"
+  "}).finally(function(){"
+  "clearTimeout(timeout); homePollInFlight=false;"
+  "var delay=success && homePollRefreshPending?0:homePollDelay;"
+  "homePollRefreshPending=false; scheduleHomeState(delay);"
+  "});"
+  "}"
+  "document.addEventListener('visibilitychange',function(){"
+  "if(document.hidden){clearTimeout(homePollTimer); homePollTimer=null;}"
+  "else updateHomeState();"
+  "});"
+  "if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',updateHomeState);"
+  "else updateHomeState();"
+
+  "</script>"
+
+  "</head><body>"
+
+  "<div class='container'>"
+  "<h2>🏠 WT32-KG Smart Home</h2>"
+
+// Tab-Navigation
+  "<div class='tabs'>"
+;
+static const char HTML_HEADER_END[] PROGMEM = "</div><div class='content'>";
+static const char HTML_FOOTER[] PROGMEM = "</div></div></body></html>";
+
+static String getHTMLNavigation(const String &activeTab) {
   String html;
-  html.reserve(8192);
-  html = "<html><head>";
-  html += "<meta charset='UTF-8'>";
-  html += "<title>WT32-KG Controller</title>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  // Tasmota Dark Mode Style
-  html += "body{font-family:Verdana,Arial,sans-serif;margin:0;padding:0;background:#1a1a1a;color:#eee;font-size:12px;}";
-  html += ".container{max-width:600px;margin:0 auto;background:#252525;overflow:hidden;}";
-  html += "h2{color:#eee;text-align:center;padding:12px 10px;font-size:16px;margin:0;background:#1fa3ec;font-weight:normal;}";
-  html += "h3{color:#eee;margin:12px 8px 8px 8px;border-left:2px solid #1fa3ec;padding-left:8px;font-size:14px;font-weight:normal;}";
-  
-  // Tab-Navigation (Tasmota-Style)
-  html += ".tabs{display:flex;background:#1a1a1a;margin:0;padding:0;list-style:none;border-bottom:1px solid #333;}";
-  html += ".tab{flex:1;text-align:center;padding:10px 5px;cursor:pointer;background:#1a1a1a;border:none;font-size:12px;color:#aaa;text-decoration:none;display:block;transition:background 0.2s;}";
-  html += ".tab:hover{background:#333;}";
-  html += ".tab.active{background:#1fa3ec;color:#fff;}";
-  
-  // Content Area
-  html += ".content{padding:8px;}";
-  
-  // Button Styles (Tasmota-ähnlich)
-  html += ".btn{padding:6px 10px;margin:2px;border:1px solid #333;border-radius:3px;cursor:pointer;font-size:12px;transition:all 0.2s;min-width:200px;display:inline-block;text-align:center;text-decoration:none;background:#444;color:#eee;}";
-  html += ".btn:hover{background:#555;}";
-  html += ".btn:active{transform:scale(0.98);}";
-  html += ".btn-on{background:#47c266;color:#fff;border-color:#47c266;}";
-  html += ".btn-on:hover{background:#5cd67a;}";
-  html += ".btn-off{background:#d43535;color:#fff;border-color:#d43535;}";
-  html += ".btn-off:hover{background:#e84848;}";
-  html += ".btn-rollo{background:#ff9800;color:#fff;border-color:#ff9800;}";
-  html += ".btn-rollo:hover{background:#ffaa33;}";
-  html += ".btn-neutral{background:#607D8B;color:#fff;border-color:#607D8B;}";
-  html += ".btn-neutral:hover{background:#738fa0;}";
-  html += ".btn-cover-open{background:#2e7d32;color:#fff;border-color:#2e7d32;}";
-  html += ".btn-cover-open:hover{background:#3a9440;}";
-  html += ".btn-cover-close{background:#c62828;color:#fff;border-color:#c62828;}";
-  html += ".btn-cover-close:hover{background:#d84343;}";
-  html += ".btn-cover-reset{background:#f9a825;color:#1b1b1b;border-color:#f9a825;font-weight:bold;}";
-  html += ".btn-cover-reset:hover{background:#ffb83a;}";
-  
-  // Layout Styles
-  html += ".grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0;}";
-  html += ".btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}";
-  html += ".card{background:#2a2a2a;padding:8px;border-radius:3px;border:1px solid #333;margin:8px 0;}";
-  html += ".rollo-group{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:6px 0;}";
-  html += ".rollo-label{min-width:100px;font-size:12px;color:#aaa;}";
-  html += ".rollo-status{margin-left:10px;color:#666;font-size:12px;}";
-  
-  // Table Styles
-  html += "table{border-collapse:collapse;width:100%;margin:8px 0;font-size:11px;}";
-  html += "td,th{border:1px solid #333;padding:4px;text-align:center;}";
-  html += "th{background:#1a1a1a;font-weight:bold;color:#999;}";
-  html += "td{background:#2a2a2a;}";
-  
-  // Input Range Slider
-  html += "input[type='range']{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;background:#444;outline:none;margin:10px 0;}";
-  html += "input[type='range']::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;}";
-  html += "input[type='range']::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#1fa3ec;cursor:pointer;border:none;}";
-  
-  // Labels
-  html += "label{color:#aaa;font-size:12px;}";
-  html += "label b{color:#eee;}";
-  html += "</style>";
-  
-  // JavaScript für AJAX-Requests ohne Seiten-Reload
-  html += "<script>";
-  html += "function toggleRelay(r,btnElement){";
-  html += "console.log('Toggle relay '+r);";
-  // OPTIMISTIC UI: Button sofort umschalten für schnelles Feedback
-  html += "var btn=btnElement;";
-  html += "var wasOn=btn.classList.contains('btn-on')||btn.classList.contains('btn-neutral');";
-  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  // Sofort neuen Zustand anzeigen (optimistic)
-  html += "if(wasOn){";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}";
-  html += "}else{";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}";
-  html += "}";
-  // Rollo-Pair optimistisch updaten (z.B. bei R0->R1 oder R2->R3)
-  html += "if(r>=0&&r<=3){";
-  html += "var pairIdx=(r==0)?1:(r==1)?0:(r==2)?3:2;";
-  html += "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+pairIdx+',this)\"]');";
-  html += "if(pairBtn&&!wasOn){";  // Nur wenn wir gerade starten (nicht stoppen)
-  html += "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  html += "pairBtn.classList.add('btn-rollo');";
-  html += "if(pairIdx==0){pairBtn.textContent='▲ Hoch';}";
-  html += "if(pairIdx==1){pairBtn.textContent='▼ Runter';}";
-  html += "if(pairIdx==2){pairBtn.textContent='▲ Hoch';}";
-  html += "if(pairIdx==3){pairBtn.textContent='▼ Runter';}";
-  html += "}";
-  html += "}";
-  // Button-Text optimistisch updaten
-  html += "if(r==0){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}";
-  html += "if(r==1){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}";
-  html += "if(r==2){btn.textContent=wasOn?'▲ Hoch':'⏹️ Stopp';}";
-  html += "if(r==3){btn.textContent=wasOn?'▼ Runter':'⏹️ Stopp';}";
-  // Server-Request im Hintergrund
-  html += "fetch('/toggle?r='+r).then(function(response){";
-  html += "return response.json();";
-  html += "}).then(function(data){";
-  html += "console.log('Server confirmed state:'+data.state);";
-  // Server-Status mit UI abgleichen (falls abweichend korrigieren)
-  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  html += "if(data.state==1){";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}";
-  html += "else{btn.classList.add('btn-on');}";
-  html += "}else{";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}";
-  html += "else{btn.classList.add('btn-off');}";
-  html += "}";
-  // Button-Text für Rollos updaten
-  html += "if(r==0){btn.textContent=data.state==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}";
-  html += "if(r==1){btn.textContent=data.state==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}";
-  html += "if(r==2){btn.textContent=data.state==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}";
-  html += "if(r==3){btn.textContent=data.state==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}";
-  // Rollo-Pair: Anderen Button auch updaten (z.B. bei Fensterrollo R00<->R01)
-  html += "if(data.pair!==undefined){";
-  html += "var pairBtn=document.querySelector('[onclick*=\"toggleRelay('+data.pair+',this)\"]');";
-  html += "if(pairBtn){";
-  html += "pairBtn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  html += "if(data.pairState==1){pairBtn.classList.add('btn-neutral');}";
-  html += "else{pairBtn.classList.add('btn-rollo');}";
-  html += "if(data.pair==0){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R00)':'▲ Hoch (R00)';}";
-  html += "if(data.pair==1){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R01)':'▼ Runter (R01)';}";
-  html += "if(data.pair==2){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R02)':'▲ Hoch (R02)';}";
-  html += "if(data.pair==3){pairBtn.textContent=data.pairState==1?'⏹️ Stopp (R03)':'▼ Runter (R03)';}";
-  html += "}";
-  html += "}";
-  // Rollo-Status-Anzeige updaten
-  html += "if(r==0||r==1){";
-  html += "var statusSpan=document.getElementById('fenster-status');";
-  html += "if(statusSpan){";
-  html += "if(data.state==1&&r==0){statusSpan.textContent=' (Fährt hoch)';}";
-  html += "else if(data.state==1&&r==1){statusSpan.textContent=' (Fährt runter)';}";
-  html += "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}";
-  html += "}";
-  html += "}";
-  html += "if(r==2||r==3){";
-  html += "var statusSpan=document.getElementById('tuer-status');";
-  html += "if(statusSpan){";
-  html += "if(data.state==1&&r==2){statusSpan.textContent=' (Fährt hoch)';}";
-  html += "else if(data.state==1&&r==3){statusSpan.textContent=' (Fährt runter)';}";
-  html += "else if(data.pairState==0){statusSpan.textContent=' (Stopp)';}";
-  html += "}";
-  html += "}";
-  // Button-Text für normale Relais updaten (4-23)
-  html += "if(r>=4){";
-  html += "var text=btn.textContent;";
-  html += "if(text.includes(':')){";
-  html += "var parts=text.split(':');";
-  html += "parts[parts.length-1]=data.state==1?' EIN':' AUS';";
-  html += "btn.textContent=parts.join(':');";
-  html += "}";
-  html += "}";
-  html += "}).catch(function(error){";
-  html += "console.error('Toggle error:',error);";
-  // Bei Fehler Button zurückschalten
-  html += "btn.classList.remove('btn-on','btn-off','btn-rollo','btn-neutral');";
-  html += "if(wasOn){";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-neutral');}else{btn.classList.add('btn-on');}";
-  html += "}else{";
-  html += "if(r==0||r==1||r==2||r==3){btn.classList.add('btn-rollo');}else{btn.classList.add('btn-off');}";
-  html += "}";
-  html += "});";
-  html += "}";
-  // JavaScript für Auto-Refresh der Eingangszustände
-  html += "function updateInputs(){";
-  html += "fetch('/inputs').then(function(response){";
-  html += "return response.json();";
-  html += "}).then(function(data){";
-  html += "for(var i=0;i<16;i++){";
-  html += "var cell=document.getElementById('input-'+i+'-status');";
-  html += "if(cell){";
-  html += "var state=data.inputs[i];";
-  html += "cell.textContent=state?'OPEN':'CLOSED';";
-  html += "cell.style.backgroundColor=state?'lightcoral':'lightgreen';";
-  html += "}";
-  html += "}";
-  html += "}).catch(function(error){";
-  html += "console.error('Input update error:',error);";
-  html += "});";
-  html += "}";
-  html += "setInterval(updateInputs,500);";  // Update alle 500ms
-  
-  // JavaScript für Cover-Steuerung (OPEN/CLOSE/STOP)
-  html += "function coverAction(coverIndex, action, btnElement) {";
-  html += "  console.log('Cover ' + coverIndex + ' Action: ' + action);";
-  html += "  ";
-  html += "  fetch('/cover?idx=' + coverIndex + '&action=' + action)";
-  html += "  .then(function(response) { return response.json(); })";
-  html += "  .then(function(data) {";
-  html += "    console.log('Cover response:', data);";
-  html += "    updateHomeState();";
-  html += "  })";
-  html += "  .catch(function(error) {";
-  html += "    console.error('Cover error:', error);";
-  html += "    alert('Fehler bei Cover-Steuerung');";
-  html += "  });";
-  html += "}";
-  html += "function updateCoverUiForIndex(i, c) {";
-  html += "  var posEl = document.getElementById('cover' + i + '-position');";
-  html += "  if (posEl) posEl.textContent = c.position + '%';";
-  html += "  var statusEl = document.getElementById('cover' + i + '-status');";
-  html += "  if (statusEl) {";
-  html += "    if (c.resetPending) statusEl.textContent = 'Status: Reset fährt auf 100%';";
-  html += "    else if (c.openRelay == 1) statusEl.textContent = 'Status: Fährt hoch';";
-  html += "    else if (c.closeRelay == 1) statusEl.textContent = 'Status: Fährt runter';";
-  html += "    else statusEl.textContent = 'Status: Gestoppt';";
-  html += "  }";
-  html += "  var openBtn = document.getElementById('cover' + i + '-open');";
-  html += "  if (openBtn) openBtn.textContent = (c.openRelay == 1) ? '▲ Fährt hoch...' : '▲ Öffnen';";
-  html += "  var closeBtn = document.getElementById('cover' + i + '-close');";
-  html += "  if (closeBtn) closeBtn.textContent = (c.closeRelay == 1) ? '▼ Fährt runter...' : '▼ Schließen';";
-  html += "}";
-  html += "function updateHomeState(){";
-  html += "fetch('/home_state').then(function(response){ return response.json(); }).then(function(data){";
-  html += "if(data && data.covers){";
-  html += "for(var i=0;i<data.covers.length;i++){ updateCoverUiForIndex(i, data.covers[i]); }";
-  html += "}";
-  html += "if(data && data.relays){";
-  html += "for(var r=4;r<24;r++){";
-  html += "var btn=document.getElementById('relay-'+r);";
-  html += "if(!btn) continue;";
-  html += "btn.classList.remove('btn-on','btn-off');";
-  html += "btn.classList.add(data.relays[r]==1?'btn-on':'btn-off');";
-  html += "var text=btn.textContent;";
-  html += "if(text.indexOf(':')!==-1){";
-  html += "var parts=text.split(':');";
-  html += "parts[parts.length-1]=data.relays[r]==1?' EIN':' AUS';";
-  html += "btn.textContent=parts.join(':');";
-  html += "}";
-  html += "}";
-  html += "}";
-  html += "}).catch(function(error){ console.error('Home update error:', error); });";
-  html += "}";
-  html += "setInterval(updateHomeState,1000);";
-  html += "updateHomeState();";
-  
-  html += "</script>";
-  
-  html += "</head><body>";
-  
-  html += "<div class='container'>";
-  html += "<h2>🏠 WT32-KG Smart Home</h2>";
-  
-  // Tab-Navigation
-  html += "<div class='tabs'>";
+  html.reserve(512);
   html += "<a href='/home' class='tab" + String(activeTab == "home" ? " active" : "") + "'>🏠 Home</a>";
   html += "<a href='/espnow' class='tab" + String(activeTab == "espnow" ? " active" : "") + "'>📡 ESP-NOW</a>";
   html += "<a href='/mqtt' class='tab" + String(activeTab == "mqtt" ? " active" : "") + "'>📨 MQTT</a>";
   html += "<a href='/info' class='tab" + String(activeTab == "info" ? " active" : "") + "'>ℹ️ Info</a>";
   html += "<a href='/edit' class='tab" + String(activeTab == "edit" ? " active" : "") + "'>✏️ Edit</a>";
-  html += "</div>";
-  
-  html += "<div class='content'>";
+  return html;
+}
+
+String getHTMLHeader(String activeTab) {
+  String html;
+  html.reserve(sizeof(HTML_HEADER_START) + 512);
+  html.concat(HTML_HEADER_START, sizeof(HTML_HEADER_START) - 1);
+  html += getHTMLNavigation(activeTab);
+  html.concat(HTML_HEADER_END, sizeof(HTML_HEADER_END) - 1);
   return html;
 }
 
 String getHTMLFooter() {
-  return "</div></div></body></html>";
+  return FPSTR(HTML_FOOTER);
+}
+
+static void sendHTMLHeader(const String &activeTab) {
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send_P(200, PSTR("text/html; charset=UTF-8"), HTML_HEADER_START);
+  server.sendContent(getHTMLNavigation(activeTab));
+  server.sendContent_P(HTML_HEADER_END);
 }
 
 // ===== Home-Seite =====
 void handleHome() {
-  String html = getHTMLHeader("home");
-  html.reserve(18432);
-  
+  sendHTMLHeader("home");
   // MPR121 Touch Enable/Disable
-  html += "<h3>📱 Touch-Eingabe (MPR121)</h3>";
-  html += "<div class='card'>";
+  server.sendContent_P(PSTR(
+    "<h3>📱 Touch-Eingabe (MPR121)</h3>"
+    "<div class='card'>"
+  ));
   String mpr121BtnClass = mpr121Enabled ? "btn-on" : "btn-off";
   String mpr121BtnText = mpr121Enabled ? "🔵 Aktuell AKTIV - Klicken zum Deaktivieren" : "🔴 Aktuell DEAKTIVIERT - Klicken zum Aktivieren";
-  html += "<button onclick='toggleMPR121(this)' class='btn " + mpr121BtnClass + "' style='min-width:280px;'>" + mpr121BtnText + "</button>";
-  html += "<p style='font-size:11px;color:#aaa;margin:10px 0 0 0;'>";
-  html += "🎯 Aktiviert/Deaktiviert die Auswertung der 3× MPR121 Touch-Sensoren<br>";
-  html += "💡 Bei Problemen mit ungewollten Touch-Events deaktivieren";
-  html += "</p>";
-  html += "</div>";
-  
-  html += "<script>";
-  html += "function toggleMPR121(btn) {";
-  html += "  fetch('/toggle_mpr121')";
-  html += "  .then(response => response.json())";
-  html += "  .then(data => {";
-  html += "    if (data.enabled) {";
-  html += "      btn.className = 'btn btn-on';";
-  html += "      btn.innerHTML = '🔵 Aktuell AKTIV - Klicken zum Deaktivieren';";
-  html += "    } else {";
-  html += "      btn.className = 'btn btn-off';";
-  html += "      btn.innerHTML = '🔴 Aktuell DEAKTIVIERT - Klicken zum Aktivieren';";
-  html += "    }";
-  html += "  });";
-  html += "}";
-  html += "</script>";
-  
+  server.sendContent("<button onclick='toggleMPR121(this)' class='btn " + mpr121BtnClass + "' style='min-width:280px;'>" + mpr121BtnText + "</button>");
+  server.sendContent_P(PSTR(
+    "<p style='font-size:11px;color:#aaa;margin:10px 0 0 0;'>"
+    "🎯 Aktiviert/Deaktiviert die Auswertung der 3× MPR121 Touch-Sensoren<br>"
+    "💡 Bei Problemen mit ungewollten Touch-Events deaktivieren"
+    "</p>"
+    "</div>"
+
+    "<script>"
+    "function toggleMPR121(btn) {"
+    "  fetch('/toggle_mpr121')"
+    "  .then(response => response.json())"
+    "  .then(data => {"
+    "    if (data.enabled) {"
+    "      btn.className = 'btn btn-on';"
+    "      btn.innerHTML = '🔵 Aktuell AKTIV - Klicken zum Deaktivieren';"
+    "    } else {"
+    "      btn.className = 'btn btn-off';"
+    "      btn.innerHTML = '🔴 Aktuell DEAKTIVIERT - Klicken zum Aktivieren';"
+    "    }"
+    "  });"
+    "}"
+    "</script>"
+
   // LED Dimmer
-  html += "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>";
-  html += "<div class='card'>";
+    "<h3>💡 LED Dimmer (GPIO15 - HW-517)</h3>"
+    "<div class='card'>"
+  ));
   int brightnessPercent = (ledDimmerBrightness * 100) / 255;
-  html += "<div style='margin:20px 0;'>";
-  html += "<label for='ledSlider'>Helligkeit: <b>" + String(brightnessPercent) + "%</b></label><br>";
-  html += "<input type='range' id='ledSlider' min='0' max='100' value='" + String(brightnessPercent) + "' ";
-  html += "style='width:300px;' oninput='updateLED(this.value)'><br>";
-  html += "<span style='font-size:12px;'>0%</span>";
-  html += "<span style='float:right;font-size:12px;'>100%</span>";
-  html += "</div>";
-  html += "</div>";  // Close card
-  
-  html += "<script>";
-  html += "function updateLED(value) {";
-  html += "  document.querySelector('label b').textContent = value + '%';";
-  html += "  fetch('/led?brightness=' + value);";
-  html += "}";
-  html += "</script>";
-  
+  server.sendContent_P(PSTR(
+    "<div style='margin:20px 0;'>"
+  ));
+  server.sendContent("<label for='ledSlider'>Helligkeit: <b id='led-brightness'>" + String(brightnessPercent) + "%</b></label><br>");
+  server.sendContent("<input type='range' id='ledSlider' min='0' max='100' value='" + String(brightnessPercent) + "' ");
+  server.sendContent_P(PSTR(
+    "style='width:300px;' oninput='updateLED(this.value)' onchange='updateLED(this.value,true)'><br>"
+    "<span style='font-size:12px;'>0%</span>"
+    "<span style='float:right;font-size:12px;'>100%</span>"
+    "</div>"
+    "</div>"  // Close card
+
   // AC Dimmer (unabhängig von R11)
-  html += "<h3>💡 AC Dimmer (GPIO2 - YYAC-3S)</h3>";
-  html += "<div class='card'>";
+    "<h3>💡 AC Dimmer (GPIO2 - YYAC-3S)</h3>"
+    "<div class='card'>"
+  ));
   int acPercent = (acDimmerBrightness * 100) / 255;
-  html += "<div style='margin:20px 0;'>";
-  html += "<label for='kronleuchterSlider'>Helligkeit: <b>" + String(acPercent) + "%</b></label><br>";
-  html += "<input type='range' id='kronleuchterSlider' min='0' max='100' value='" + String(acPercent) + "' ";
-  html += "style='width:300px;' oninput='updateKronleuchter(this.value)'><br>";
-  html += "<span style='font-size:12px;'>0%</span>";
-  html += "<span style='float:right;font-size:12px;'>100%</span>";
-  html += "</div>";
-  html += "</div>";  // Close card
-  
-  html += "<script>";
-  html += "function updateKronleuchter(value) {";
-  html += "  document.querySelectorAll('label b')[1].textContent = value + '%';";
-  html += "  fetch('/kronleuchter?brightness=' + value);";
-  html += "}";
-  html += "</script>";
+  server.sendContent_P(PSTR(
+    "<div style='margin:20px 0;'>"
+  ));
+  server.sendContent("<label for='kronleuchterSlider'>Helligkeit: <b id='ac-brightness'>" + String(acPercent) + "%</b></label><br>");
+  server.sendContent("<input type='range' id='kronleuchterSlider' min='0' max='100' value='" + String(acPercent) + "' ");
+  server.sendContent_P(PSTR(
+    "style='width:300px;' oninput='updateKronleuchter(this.value)' onchange='updateKronleuchter(this.value,true)'><br>"
+    "<span style='font-size:12px;'>0%</span>"
+    "<span style='float:right;font-size:12px;'>100%</span>"
+    "</div>"
+    "</div>"  // Close card
 
   // Cover-Devices (Rollläden)
-  html += "<h3>🪟 Rollläden</h3>";
-  html += "<div class='card'>";
-  
+    "<h3>🪟 Rollläden</h3>"
+    "<div class='card'>"
+
   // Cover 0: Fensterrollo (R00+R01)
-  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-  html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
-  html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[0] + "</span>";
-  html += "<span id='cover0-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[0].position) + "%</span>";
-  html += "</div>";
-  
+    "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>"
+    "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>"
+  ));
+  server.sendContent("<span style='font-weight:bold;color:#4caf50;'>" + escapeHTML(coverNames[0]) + "</span>");
+  server.sendContent("<span id='cover0-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[0].position) + "%</span>");
+  server.sendContent_P(PSTR(
+    "</div>"
+
   // 3 Buttons: OPEN, CLOSE, STOP
-  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
-  
+    "<div style='display:flex;gap:5px;margin-bottom:10px;'>"
+  ));
+
   // OPEN Button
   bool cover0Opening = (relayState[0] == 1 && relayState[1] == 0);
-  html += "<button id='cover0-open' onclick='coverAction(0, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>";
-  html += cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
-  html += "</button>";
-  
+  server.sendContent_P(PSTR(
+    "<button id='cover0-open' onclick='coverAction(0, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>"
+  ));
+  server.sendContent(cover0Opening ? "▲ Fährt hoch..." : "▲ Öffnen");
+  server.sendContent_P(PSTR(
+    "</button>"
+
   // STOP Button
-  html += "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>";
-  
+    "<button onclick='coverAction(0, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>"
+  ));
+
   // CLOSE Button
   bool cover0Closing = (relayState[0] == 0 && relayState[1] == 1);
-  html += "<button id='cover0-close' onclick='coverAction(0, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>";
-  html += cover0Closing ? "▼ Fährt runter..." : "▼ Schließen";
-  html += "</button>";
-  
-  html += "</div>";
-  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
-  html += "<button onclick='coverAction(0, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (47s)</button>";
-  html += "</div>";
-  
+  server.sendContent_P(PSTR(
+    "<button id='cover0-close' onclick='coverAction(0, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>"
+  ));
+  server.sendContent(cover0Closing ? "▼ Fährt runter..." : "▼ Schließen");
+  server.sendContent_P(PSTR(
+    "</button>"
+
+    "</div>"
+    "<div style='display:flex;gap:5px;margin-bottom:10px;'>"
+    "<button onclick='coverAction(0, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (47s)</button>"
+    "</div>"
+  ));
+
   // Status-Anzeige
   String cover0Status = "Gestoppt";
   if (cover0Opening) cover0Status = "Fährt hoch";
   else if (cover0Closing) cover0Status = "Fährt runter";
-  html += "<div style='font-size:11px;color:#aaa;text-align:center;' id='cover0-status'>Status: " + cover0Status + "</div>";
-  html += "</div>";
-  
+  server.sendContent("<div style='font-size:11px;color:#aaa;text-align:center;' id='cover0-status'>Status: " + cover0Status + "</div>");
+  server.sendContent_P(PSTR(
+    "</div>"
+
   // Cover 1: Türrollo (R02+R03)
-  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-  html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>";
-  html += "<span style='font-weight:bold;color:#4caf50;'>" + coverNames[1] + "</span>";
-  html += "<span id='cover1-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[1].position) + "%</span>";
-  html += "</div>";
-  
+    "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>"
+    "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>"
+  ));
+  server.sendContent("<span style='font-weight:bold;color:#4caf50;'>" + escapeHTML(coverNames[1]) + "</span>");
+  server.sendContent("<span id='cover1-position' style='font-size:18px;font-weight:bold;color:#4caf50;'>" + String((int)covers[1].position) + "%</span>");
+  server.sendContent_P(PSTR(
+    "</div>"
+
   // 3 Buttons: OPEN, CLOSE, STOP
-  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
-  
+    "<div style='display:flex;gap:5px;margin-bottom:10px;'>"
+  ));
+
   // OPEN Button
   bool cover1Opening = (relayState[2] == 1 && relayState[3] == 0);
-  html += "<button id='cover1-open' onclick='coverAction(1, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>";
-  html += cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen";
-  html += "</button>";
-  
+  server.sendContent_P(PSTR(
+    "<button id='cover1-open' onclick='coverAction(1, \"OPEN\", this)' class='btn btn-cover-open' style='flex:1;max-width:120px;min-width:auto;'>"
+  ));
+  server.sendContent(cover1Opening ? "▲ Fährt hoch..." : "▲ Öffnen");
+  server.sendContent_P(PSTR(
+    "</button>"
+
   // STOP Button
-  html += "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>";
-  
+    "<button onclick='coverAction(1, \"STOP\", this)' class='btn btn-neutral' style='flex:1;max-width:120px;min-width:auto;'>⏹️ Stopp</button>"
+  ));
+
   // CLOSE Button
   bool cover1Closing = (relayState[2] == 0 && relayState[3] == 1);
-  html += "<button id='cover1-close' onclick='coverAction(1, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>";
-  html += cover1Closing ? "▼ Fährt runter..." : "▼ Schließen";
-  html += "</button>";
-  
-  html += "</div>";
-  html += "<div style='display:flex;gap:5px;margin-bottom:10px;'>";
-  html += "<button onclick='coverAction(1, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (48s)</button>";
-  html += "</div>";
-  
+  server.sendContent_P(PSTR(
+    "<button id='cover1-close' onclick='coverAction(1, \"CLOSE\", this)' class='btn btn-cover-close' style='flex:1;max-width:120px;min-width:auto;'>"
+  ));
+  server.sendContent(cover1Closing ? "▼ Fährt runter..." : "▼ Schließen");
+  server.sendContent_P(PSTR(
+    "</button>"
+
+    "</div>"
+    "<div style='display:flex;gap:5px;margin-bottom:10px;'>"
+    "<button onclick='coverAction(1, \"RESET\", this)' class='btn btn-cover-reset' style='flex:1;min-width:auto;'>↟ Reset auf oben (48s)</button>"
+    "</div>"
+  ));
+
   // Status-Anzeige
   String cover1Status = "Gestoppt";
   if (cover1Opening) cover1Status = "Fährt hoch";
   else if (cover1Closing) cover1Status = "Fährt runter";
-  html += "<div style='font-size:11px;color:#aaa;text-align:center;' id='cover1-status'>Status: " + cover1Status + "</div>";
-  html += "</div>";
-  
-  html += "</div>";
+  server.sendContent("<div style='font-size:11px;color:#aaa;text-align:center;' id='cover1-status'>Status: " + cover1Status + "</div>");
+  server.sendContent_P(PSTR(
+    "</div>"
+
+    "</div>"
 
   // Lampen & Relais - alle R04-R23 in 2-spaltigem Grid
-  html += "<h3>💡 Lampen & Relais</h3>";
-  html += "<div class='card'>";
-  html += "<div class='btn-grid'>";
-  
+    "<h3>💡 Lampen & Relais</h3>"
+    "<div class='card'>"
+    "<div class='btn-grid'>"
+  ));
+
   // R04-R23 alle in einer Schleife
   for (int i = 4; i < 24; i++) {
     String relaisClass = relayState[i] ? "btn-on" : "btn-off";
     String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
     String icon = "💡";
     String relaisStatus = "";
-    
+
     // R11 Kronleuchter hat spezielles Format mit EIN/AUS
     if (i == 11) {
       icon = "⚡";
       relaisStatus = relayState[i] ? ": EIN" : ": AUS";
-      html += "<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+      server.sendContent("<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + escapeHTML(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>");
     } else {
       // Alle anderen Relais
       if (i >= 13) icon = "🔌"; // Freie Relais bekommen Stecker-Icon
       relaisStatus = relayState[i] ? ": EIN" : ": AUS";
-      html += "<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + String(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>";
+      server.sendContent("<button id='relay-" + String(i) + "' onclick='toggleRelay(" + String(i) + ",this)' class='btn " + relaisClass + "'>" + icon + " " + escapeHTML(relayNames[i]) + " (" + relaisNum + ")" + relaisStatus + "</button>");
     }
   }
-  
-  html += "</div>"; // btn-grid
-  html += "</div>"; // card
-  
-  html += "</div>"; // content
+
+  server.sendContent_P(PSTR(
+    "</div>" // btn-grid
+    "</div>" // card
+
+    "</div>" // content
 
   // Eingänge
-  html += "<h3>📊 Digitale Eingänge</h3>";
-  html += "<table><tr>";
-  html += "<th>Eingang</th><th>Funktion</th><th>Status</th></tr>";
-  
+    "<h3>📊 Digitale Eingänge</h3>"
+    "<table><tr>"
+    "<th>Eingang</th><th>Funktion</th><th>Status</th></tr>"
+  ));
+
   for (int i = 0; i < 16; i++) {
     String status = inputState[i] ? "OPEN" : "CLOSED";
     String color = inputState[i] ? "lightcoral" : "lightgreen";
-    html += "<tr>";
-    html += "<td>IN" + String(i) + "</td>";
-    html += "<td>" + inputNames[i] + "</td>";
-    html += "<td id='input-" + String(i) + "-status' style='background-color:" + color + ";font-weight:bold;'>" + status + "</td>";
-    html += "</tr>";
+    String row;
+    row.reserve(384);
+    row += "<tr><td>IN" + String(i) + "</td>";
+    row += "<td>" + escapeHTML(inputNames[i]) + "</td>";
+    row += "<td id='input-" + String(i) + "-status' style='background-color:" + color + ";font-weight:bold;'>" + status + "</td></tr>";
+    server.sendContent(row);
   }
-  html += "</table>";
-  
+  server.sendContent_P(PSTR(
+    "</table>"
+  ));
+
   // Temperatursensoren nach digitalen Eingängen
-  html += getTemperatureHTML();
-  
-  html += getHTMLFooter();
-  server.send(200, "text/html; charset=UTF-8", html);
+  server.sendContent(getTemperatureHTML());
+
+  server.sendContent_P(HTML_FOOTER);
+  server.sendContent("");
 }
 
 // ===== ESP-NOW Seite =====
@@ -2792,7 +2795,7 @@ void handleInfo() {
     html += "<tr><td style='text-align:left;'>Status</td><td style='color:#47c266;text-align:left;'>✅ Verbunden (Ethernet)</td></tr>";
     html += "<tr><td style='text-align:left;'>IP-Adresse</td><td style='text-align:left;'>" + ETH.localIP().toString() + "</td></tr>";
     html += "<tr><td style='text-align:left;'>MAC-Adresse</td><td style='text-align:left;'>" + ETH.macAddress() + "</td></tr>";
-    html += "<tr><td style='text-align:left;'>Hostname</td><td style='text-align:left;'>" + String(HOSTNAME) + "</td></tr>";
+    html += "<tr><td style='text-align:left;'>Hostname</td><td style='text-align:left;'>" + escapeHTML(String(HOSTNAME)) + "</td></tr>";
     html += "<tr><td style='text-align:left;'>Link Speed</td><td style='text-align:left;'>" + String(ETH.linkSpeed()) + " Mbps</td></tr>";
     html += "<tr><td style='text-align:left;'>Full Duplex</td><td style='text-align:left;'>" + String(ETH.fullDuplex() ? "Ja" : "Nein") + "</td></tr>";
   } else {
@@ -2899,7 +2902,7 @@ void handleESPNow() {
     html += "<table><tr><th>Name</th><th>Typ</th><th>Status</th><th>Aktion</th></tr>";
     for (int i = 0; i < espnowClientCount; i++) {
       ESPNowClient *c = &espnowClients[i];
-      html += "<tr><td>" + String(c->name) + "</td>";
+      html += "<tr><td>" + escapeHTML(String(c->name)) + "</td>";
       html += "<td>";
       switch (c->type) {
         case CLIENT_TYPE_SENSOR: html += "📊 Sensor"; break;
@@ -2983,371 +2986,420 @@ void handleRemoveClient() {
 
 // ===== Edit-Seite für Relay-Namen =====
 void handleEdit() {
-  // Verwende Chunked Transfer um String-Size-Limit zu umgehen
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "text/html; charset=UTF-8", "");
-  
-  String html = getHTMLHeader("edit");
-  server.sendContent(html);
-  
-  html = "<h3>✏️ Konfiguration</h3>";
-  html += "<div class='card'>";
-  html += "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>";
-  html += "Namen und HA-Status werden permanent im NVRAM gespeichert.<br>";
-  html += "💡 <b>Cover</b> = virtuelle Rollläden (steuern je 2 physische Relais) | <b>Light</b> = Lampen | <b>Switch</b> = Schalter";
-  html += "</p>";
-  server.sendContent(html);
-  
+  sendHTMLHeader("edit");
+
+  server.sendContent_P(PSTR(
+    "<h3>✏️ Konfiguration</h3>"
+    "<div class='card'>"
+    "<p style='font-size:12px;color:#aaa;margin:0 0 15px 0;'>"
+    "Namen und HA-Status werden permanent im NVRAM gespeichert.<br>"
+    "💡 <b>Cover</b> = virtuelle Rollläden (steuern je 2 physische Relais) | <b>Light</b> = Lampen | <b>Switch</b> = Schalter"
+    "</p>"
+
+
   // ======================================================
   // SPECIAL DEVICES (MPR121 Touch, LED Dimmer, AC Dimmer) - ZUERST!
   // ======================================================
-  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>⚡ Special Devices</h4>";
-  
+    "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>⚡ Special Devices</h4>"
+
   // MPR121 Touch-Eingabe
-  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
-  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-  html += "<label style='min-width:120px;font-weight:bold;color:#ff9800;'>📱 MPR121 Touch:</label>";
-  html += "<input type='text' id='specialname0' value='" + mpr121Name + "' ";
-  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-  html += "maxlength='30'>";
-  html += "</div>";
-  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>"
+    "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    "<label style='min-width:120px;font-weight:bold;color:#ff9800;'>📱 MPR121 Touch:</label>"
+  ));
+  server.sendContent("<input type='text' id='specialname0' value='" + escapeHTML(mpr121Name) + "' ");
+  server.sendContent_P(PSTR(
+    "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+    "maxlength='30'>"
+    "</div>"
+    "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+    "<div style='display:flex;align-items:center;gap:5px;'>"
+  ));
   String mprChecked = mpr121HAEnabled ? " checked" : "";
-  html += "<input type='checkbox' id='specialenabled0'" + mprChecked + " ";
-  html += "style='width:18px;height:18px;cursor:pointer;'>";
-  html += "<label for='specialenabled0' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
-  html += "</div>";
-  html += "</div>";
-  html += "<div style='text-align:right;'>";
-  html += "<button onclick='saveSpecialConfig(0)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-  html += "</div>";
-  html += "</div>";
-  
+  server.sendContent("<input type='checkbox' id='specialenabled0'" + mprChecked + " ");
+  server.sendContent_P(PSTR(
+    "style='width:18px;height:18px;cursor:pointer;'>"
+    "<label for='specialenabled0' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>"
+    "</div>"
+    "</div>"
+    "<div style='text-align:right;'>"
+    "<button onclick='saveSpecialConfig(0)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>"
+    "</div>"
+    "</div>"
+
   // LED Dimmer
-  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ffeb3b;'>";
-  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-  html += "<label style='min-width:120px;font-weight:bold;color:#ffeb3b;'>💡 LED Dimmer:</label>";
-  html += "<input type='text' id='specialname1' value='" + ledDimmerName + "' ";
-  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-  html += "maxlength='30'>";
-  html += "</div>";
-  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ffeb3b;'>"
+    "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    "<label style='min-width:120px;font-weight:bold;color:#ffeb3b;'>💡 LED Dimmer:</label>"
+  ));
+  server.sendContent("<input type='text' id='specialname1' value='" + escapeHTML(ledDimmerName) + "' ");
+  server.sendContent_P(PSTR(
+    "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+    "maxlength='30'>"
+    "</div>"
+    "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+    "<div style='display:flex;align-items:center;gap:5px;'>"
+  ));
   String ledChecked = ledDimmerHAEnabled ? " checked" : "";
-  html += "<input type='checkbox' id='specialenabled1'" + ledChecked + " ";
-  html += "style='width:18px;height:18px;cursor:pointer;'>";
-  html += "<label for='specialenabled1' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
-  html += "</div>";
-  html += "</div>";
-  html += "<div style='text-align:right;'>";
-  html += "<button onclick='saveSpecialConfig(1)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-  html += "</div>";
-  html += "</div>";
-  
+  server.sendContent("<input type='checkbox' id='specialenabled1'" + ledChecked + " ");
+  server.sendContent_P(PSTR(
+    "style='width:18px;height:18px;cursor:pointer;'>"
+    "<label for='specialenabled1' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>"
+    "</div>"
+    "</div>"
+    "<div style='text-align:right;'>"
+    "<button onclick='saveSpecialConfig(1)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>"
+    "</div>"
+    "</div>"
+
   // AC Dimmer
-  html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-  html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-  html += "<label style='min-width:120px;font-weight:bold;color:#4caf50;'>💡 AC Dimmer:</label>";
-  html += "<input type='text' id='specialname2' value='" + acDimmerName + "' ";
-  html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-  html += "maxlength='30'>";
-  html += "</div>";
-  html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-  html += "<div style='display:flex;align-items:center;gap:5px;'>";
+    "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>"
+    "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    "<label style='min-width:120px;font-weight:bold;color:#4caf50;'>💡 AC Dimmer:</label>"
+  ));
+  server.sendContent("<input type='text' id='specialname2' value='" + escapeHTML(acDimmerName) + "' ");
+  server.sendContent_P(PSTR(
+    "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+    "maxlength='30'>"
+    "</div>"
+    "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+    "<div style='display:flex;align-items:center;gap:5px;'>"
+  ));
   String acChecked = acDimmerHAEnabled ? " checked" : "";
-  html += "<input type='checkbox' id='specialenabled2'" + acChecked + " ";
-  html += "style='width:18px;height:18px;cursor:pointer;'>";
-  html += "<label for='specialenabled2' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
-  html += "</div>";
-  html += "</div>";
-  html += "<div style='text-align:right;'>";
-  html += "<button onclick='saveSpecialConfig(2)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-  html += "</div>";
-  html += "</div>";
-  
-  server.sendContent(html);
-  
+  server.sendContent("<input type='checkbox' id='specialenabled2'" + acChecked + " ");
+  server.sendContent_P(PSTR(
+    "style='width:18px;height:18px;cursor:pointer;'>"
+    "<label for='specialenabled2' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>"
+    "</div>"
+    "</div>"
+    "<div style='text-align:right;'>"
+    "<button onclick='saveSpecialConfig(2)' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>"
+    "</div>"
+    "</div>"
+
+
   // ======================================================
   // COVER-EINTRÄGE (2 virtuelle Cover-Devices)
   // ======================================================
-  html = "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>";
-  server.sendContent(html);
-  
+    "<h4 style='margin:20px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>🪟 Cover-Devices</h4>"
+  ));
+
+
   for (int i = 0; i < 2; i++) {
-    html = "";  // HTML komplett leeren für jeden Cover
+
     String coverNum = "Cover " + String(i);
     String relayPair = (i == 0) ? "(R00+R01)" : "(R02+R03)";
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>";
-    
+
+    server.sendContent_P(PSTR(
+      "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #4caf50;'>"
+
     // Erste Zeile: Cover-Nummer & Name & Aktuelle Position
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>";
-    html += "<input type='text' id='covername" + String(i) + "' value='" + coverNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    
+      "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    ));
+    server.sendContent("<label style='min-width:100px;font-weight:bold;color:#4caf50;'>" + coverNum + " " + relayPair + ":</label>");
+    server.sendContent("<input type='text' id='covername" + String(i) + "' value='" + escapeHTML(coverNames[i]) + "' ");
+    server.sendContent_P(PSTR(
+      "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+      "maxlength='30'>"
+
     // Aktuelle Position anzeigen
-    html += "<span style='min-width:60px;text-align:right;color:#4caf50;font-weight:bold;font-size:14px;'>";
-    html += String((int)covers[i].position) + "%</span>";
-    html += "</div>";
-    
+      "<span style='min-width:60px;text-align:right;color:#4caf50;font-weight:bold;font-size:14px;'>"
+    ));
+    server.sendContent(String((int)covers[i].position) + "%</span>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
     // Zweite Zeile: HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+      "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+      "<div style='display:flex;align-items:center;gap:5px;'>"
+    ));
     String checked = coverHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='coverenabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='coverenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>";
-    html += "</div>";
-    html += "</div>";
-    
+    server.sendContent("<input type='checkbox' id='coverenabled" + String(i) + "'" + checked + " ");
+    server.sendContent_P(PSTR(
+      "style='width:18px;height:18px;cursor:pointer;'>"
+    ));
+    server.sendContent("<label for='coverenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>In Home Assistant anzeigen</label>");
+    server.sendContent_P(PSTR(
+      "</div>"
+      "</div>"
+
     // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveCoverConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close cover card
-    server.sendContent(html);
+      "<div style='text-align:right;'>"
+    ));
+    server.sendContent("<button onclick='saveCoverConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
+      "</div>"  // Close cover card
+    ));
+
   }
-  
+
   // Info zur nächtlichen Kalibrierung
-  html = "<div class='card' style='background:#1a237e;border-color:#3f51b5;margin:15px 0;'>";
-  html += "<p style='margin:5px 0;font-size:12px;color:#90caf9;'><b>⏰ Auto-Kalibrierung:</b></p>";
-  html += "<p style='margin:5px 0;font-size:11px;color:#aaa;'>";
-  html += "• Täglich um <b>23:00 Uhr</b> fahren alle Covers automatisch auf 100%<br>";
-  html += "• Position wird neu kalibriert (verhindert Drift durch Laständerungen)<br>";
-  html += "• NTP-Zeit wird von pool.ntp.org synchronisiert</p>";
-  html += "</div>";
-  server.sendContent(html);
-  
+  server.sendContent_P(PSTR(
+    "<div class='card' style='background:#1a237e;border-color:#3f51b5;margin:15px 0;'>"
+    "<p style='margin:5px 0;font-size:12px;color:#90caf9;'><b>⏰ Auto-Kalibrierung:</b></p>"
+    "<p style='margin:5px 0;font-size:11px;color:#aaa;'>"
+    "• Täglich um <b>23:00 Uhr</b> fahren alle Covers automatisch auf 100%<br>"
+    "• Position wird neu kalibriert (verhindert Drift durch Laständerungen)<br>"
+    "• NTP-Zeit wird von pool.ntp.org synchronisiert</p>"
+    "</div>"
+
+
   // ======================================================
   // RELAY-EINTRÄGE (R04-R23, 20 Relais)
   // ======================================================
-  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>💡 Relay-Devices (R04-R23)</h4>";
-  server.sendContent(html);
-  
-  // Formular für R04-R23 (20 Relais) - sende alle 5 Relays als Chunk
+    "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>💡 Relay-Devices (R04-R23)</h4>"
+  ));
+
+
   for (int i = 4; i < 24; i++) {
-    if ((i - 4) % 5 == 0) {
-      if (i > 4) server.sendContent(html);
-      html = "";
-    }
-    
+
+
     String relaisNum = (i < 10) ? "R0" + String(i) : "R" + String(i);
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>";
-    
+
+    server.sendContent_P(PSTR(
+      "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #1fa3ec;'>"
+
     // Erste Zeile: Relais-Nummer & Name
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:60px;font-weight:bold;color:#1fa3ec;'>" + relaisNum + ":</label>";
-    html += "<input type='text' id='name" + String(i) + "' value='" + relayNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    html += "</div>";
-    
+      "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    ));
+    server.sendContent("<label style='min-width:60px;font-weight:bold;color:#1fa3ec;'>" + relaisNum + ":</label>");
+    server.sendContent("<input type='text' id='name" + String(i) + "' value='" + escapeHTML(relayNames[i]) + "' ");
+    server.sendContent_P(PSTR(
+      "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+      "maxlength='30'>"
+      "</div>"
+
     // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    
+      "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+
     // Device-Typ Dropdown
-    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
-    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
-    html += "<select id='type" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
-    
+      "<div style='display:flex;align-items:center;gap:5px;flex:1;'>"
+      "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>"
+    ));
+    server.sendContent("<select id='type" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>");
+
     // Optionen mit aktuellem Wert ausgewählt
-    String types[] = {"none", "switch", "light", "cover", "fan"};
-    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "💡 Light", "🪟 Cover", "🌀 Fan"};
+    static const char *const types[] PROGMEM = {"none", "switch", "light", "cover", "fan"};
+    static const char *const typeLabels[] PROGMEM = {"❌ Kein HA", "🔘 Switch", "💡 Light", "🪟 Cover", "🌀 Fan"};
+    String options;
+    options.reserve(512);
     for (int t = 0; t < 5; t++) {
       String selected = (relayHAType[i] == types[t]) ? " selected" : "";
-      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+      options += String("<option value='") + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
     }
-    
-    html += "</select>";
-    html += "</div>";
-    
+    server.sendContent(options);
+
+    server.sendContent_P(PSTR(
+      "</select>"
+      "</div>"
+
     // HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+      "<div style='display:flex;align-items:center;gap:5px;'>"
+    ));
     String checked = relayHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='enabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='enabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
-    html += "</div>";
-    
-    html += "</div>";
-    
+    server.sendContent("<input type='checkbox' id='enabled" + String(i) + "'" + checked + " ");
+    server.sendContent_P(PSTR(
+      "style='width:18px;height:18px;cursor:pointer;'>"
+    ));
+    server.sendContent("<label for='enabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
+      "</div>"
+
     // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close relay card
+      "<div style='text-align:right;'>"
+    ));
+    server.sendContent("<button onclick='saveConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
+      "</div>"  // Close relay card
+    ));
   }
-  server.sendContent(html);  // Sende letzte Relays
-  
+
+
   // ======================================================
   // INPUT-EINTRÄGE (IN00-IN15, 16 Binary Sensors)
   // ======================================================
-  html = "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>📥 Input-Devices (IN00-IN15)</h4>";
-  server.sendContent(html);
-  
+  server.sendContent_P(PSTR(
+    "<h4 style='margin:30px 0 10px 0;color:#1fa3ec;border-bottom:1px solid #555;padding-bottom:5px;'>📥 Input-Devices (IN00-IN15)</h4>"
+  ));
+
+
   for (int i = 0; i < 16; i++) {
-    if (i % 5 == 0) {
-      if (i > 0) server.sendContent(html);
-      html = "";
-    }
+
     String inputNum = (i < 10) ? "IN0" + String(i) : "IN" + String(i);
-    
-    html += "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>";
-    
+
+    server.sendContent_P(PSTR(
+      "<div style='margin:15px 0;padding:10px;background:#2a2a2a;border-radius:5px;border-left:3px solid #ff9800;'>"
+
     // Erste Zeile: Input-Nummer & Name
-    html += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>";
-    html += "<label style='min-width:60px;font-weight:bold;color:#ff9800;'>" + inputNum + ":</label>";
-    html += "<input type='text' id='inputname" + String(i) + "' value='" + inputNames[i] + "' ";
-    html += "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
-    html += "maxlength='30'>";
-    html += "</div>";
-    
+      "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+    ));
+    server.sendContent("<label style='min-width:60px;font-weight:bold;color:#ff9800;'>" + inputNum + ":</label>");
+    server.sendContent("<input type='text' id='inputname" + String(i) + "' value='" + escapeHTML(inputNames[i]) + "' ");
+    server.sendContent_P(PSTR(
+      "style='flex:1;padding:6px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' "
+      "maxlength='30'>"
+      "</div>"
+
     // Zweite Zeile: Device-Typ Dropdown & HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>";
-    
+      "<div style='display:flex;align-items:center;gap:15px;margin-bottom:8px;'>"
+
     // Device-Typ Dropdown (Binary Sensor Device Classes)
-    html += "<div style='display:flex;align-items:center;gap:5px;flex:1;'>";
-    html += "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>";
-    html += "<select id='inputtype" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>";
-    
+      "<div style='display:flex;align-items:center;gap:5px;flex:1;'>"
+      "<label style='font-size:11px;color:#aaa;min-width:70px;'>HA Typ:</label>"
+    ));
+    server.sendContent("<select id='inputtype" + String(i) + "' style='padding:5px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;flex:1;max-width:150px;'>");
+
     // Binary Sensor Device Classes
-    String types[] = {"none", "switch", "door", "window", "motion", "occupancy", "opening", "garage_door"};
-    String typeLabels[] = {"❌ Kein HA", "🔘 Switch", "🚪 Door", "🪟 Window", "👋 Motion", "👤 Occupancy", "📂 Opening", "🏠 Garage"};
+    static const char *const types[] PROGMEM = {"none", "switch", "door", "window", "motion", "occupancy", "opening", "garage_door"};
+    static const char *const typeLabels[] PROGMEM = {"❌ Kein HA", "🔘 Switch", "🚪 Door", "🪟 Window", "👋 Motion", "👤 Occupancy", "📂 Opening", "🏠 Garage"};
+    String options;
+    options.reserve(768);
     for (int t = 0; t < 8; t++) {
       String selected = (inputHAType[i] == types[t]) ? " selected" : "";
-      html += "<option value='" + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
+      options += String("<option value='") + types[t] + "'" + selected + ">" + typeLabels[t] + "</option>";
     }
-    
-    html += "</select>";
-    html += "</div>";
-    
+    server.sendContent(options);
+
+    server.sendContent_P(PSTR(
+      "</select>"
+      "</div>"
+
     // HA Enable Checkbox
-    html += "<div style='display:flex;align-items:center;gap:5px;'>";
+      "<div style='display:flex;align-items:center;gap:5px;'>"
+    ));
     String checked = inputHAEnabled[i] ? " checked" : "";
-    html += "<input type='checkbox' id='inputenabled" + String(i) + "'" + checked + " ";
-    html += "style='width:18px;height:18px;cursor:pointer;'>";
-    html += "<label for='inputenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>";
-    html += "</div>";
-    
-    html += "</div>";
-    
+    server.sendContent("<input type='checkbox' id='inputenabled" + String(i) + "'" + checked + " ");
+    server.sendContent_P(PSTR(
+      "style='width:18px;height:18px;cursor:pointer;'>"
+    ));
+    server.sendContent("<label for='inputenabled" + String(i) + "' style='font-size:11px;color:#aaa;cursor:pointer;'>HA anzeigen</label>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
+      "</div>"
+
     // Dritte Zeile: Speichern-Button
-    html += "<div style='text-align:right;'>";
-    html += "<button onclick='saveInputConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>";
-    html += "</div>";
-    
-    html += "</div>";  // Close input card
+      "<div style='text-align:right;'>"
+    ));
+    server.sendContent("<button onclick='saveInputConfig(" + String(i) + ")' class='btn btn-neutral' style='min-width:100px;font-size:12px;'>💾 Speichern</button>");
+    server.sendContent_P(PSTR(
+      "</div>"
+
+      "</div>"  // Close input card
+    ));
   }
-  server.sendContent(html);  // Sende letzte Inputs
-  
-  html = "</div>";  // Close card container
-  server.sendContent(html);
-  
+
+
+  server.sendContent_P(PSTR(
+    "</div>"  // Close card container
+
+
   // JavaScript für Save-Funktionen
-  html = "<script>";
-  
+    "<script>"
+
   // Cover Config speichern
-  html += "function saveCoverConfig(coverIndex) {";
-  html += "  var name = document.getElementById('covername' + coverIndex).value.trim();";
-  html += "  var enabled = document.getElementById('coverenabled' + coverIndex).checked ? '1' : '0';";
-  html += "  if (name === '') {";
-  html += "    alert('Name darf nicht leer sein!');";
-  html += "    return;";
-  html += "  }";
-  html += "  fetch('/savecover?cover=' + coverIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)";
-  html += "  .then(function(response) { return response.json(); })";
-  html += "  .then(function(data) {";
-  html += "    if (data.success) {";
-  html += "      alert('✅ Cover-Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
-  html += "    } else {";
-  html += "      alert('❌ Fehler beim Speichern');";
-  html += "    }";
-  html += "  })";
-  html += "  .catch(function(error) {";
-  html += "    alert('❌ Fehler: ' + error);";
-  html += "  });";
-  html += "}";
-  
+    "function saveCoverConfig(coverIndex) {"
+    "  var name = document.getElementById('covername' + coverIndex).value.trim();"
+    "  var enabled = document.getElementById('coverenabled' + coverIndex).checked ? '1' : '0';"
+    "  if (name === '') {"
+    "    alert('Name darf nicht leer sein!');"
+    "    return;"
+    "  }"
+    "  fetch('/savecover?cover=' + coverIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)"
+    "  .then(function(response) { return response.json(); })"
+    "  .then(function(data) {"
+    "    if (data.success) {"
+    "      alert('✅ Cover-Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));"
+    "    } else {"
+    "      alert('❌ Fehler beim Speichern');"
+    "    }"
+    "  })"
+    "  .catch(function(error) {"
+    "    alert('❌ Fehler: ' + error);"
+    "  });"
+    "}"
+
   // Relay Config speichern
-  html += "function saveConfig(relayIndex) {";
-  html += "  var name = document.getElementById('name' + relayIndex).value.trim();";
-  html += "  var type = document.getElementById('type' + relayIndex).value;";
-  html += "  var enabled = document.getElementById('enabled' + relayIndex).checked ? '1' : '0';";
-  html += "  if (name === '') {";
-  html += "    alert('Name darf nicht leer sein!');";
-  html += "    return;";
-  html += "  }";
-  html += "  fetch('/savename?relay=' + relayIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)";
-  html += "  .then(function(response) { return response.json(); })";
-  html += "  .then(function(data) {";
-  html += "    if (data.success) {";
-  html += "      alert('✅ Konfiguration gespeichert\\n\\nName: ' + name + '\\nTyp: ' + type + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
-  html += "    } else {";
-  html += "      alert('❌ Fehler beim Speichern');";
-  html += "    }";
-  html += "  })";
-  html += "  .catch(function(error) {";
-  html += "    alert('❌ Fehler: ' + error);";
-  html += "  });";
-  html += "}";
-  
+    "function saveConfig(relayIndex) {"
+    "  var name = document.getElementById('name' + relayIndex).value.trim();"
+    "  var type = document.getElementById('type' + relayIndex).value;"
+    "  var enabled = document.getElementById('enabled' + relayIndex).checked ? '1' : '0';"
+    "  if (name === '') {"
+    "    alert('Name darf nicht leer sein!');"
+    "    return;"
+    "  }"
+    "  fetch('/savename?relay=' + relayIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)"
+    "  .then(function(response) { return response.json(); })"
+    "  .then(function(data) {"
+    "    if (data.success) {"
+    "      alert('✅ Konfiguration gespeichert\\n\\nName: ' + name + '\\nTyp: ' + type + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));"
+    "    } else {"
+    "      alert('❌ Fehler beim Speichern');"
+    "    }"
+    "  })"
+    "  .catch(function(error) {"
+    "    alert('❌ Fehler: ' + error);"
+    "  });"
+    "}"
+
   // Input Config speichern
-  html += "function saveInputConfig(inputIndex) {";
-  html += "  var name = document.getElementById('inputname' + inputIndex).value.trim();";
-  html += "  var type = document.getElementById('inputtype' + inputIndex).value;";
-  html += "  var enabled = document.getElementById('inputenabled' + inputIndex).checked ? '1' : '0';";
-  html += "  if (name === '') {";
-  html += "    alert('Name darf nicht leer sein!');";
-  html += "    return;";
-  html += "  }";
-  html += "  fetch('/saveinput?input=' + inputIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)";
-  html += "  .then(function(response) { return response.json(); })";
-  html += "  .then(function(data) {";
-  html += "    if (data.success) {";
-  html += "      alert('✅ Input-Konfiguration gespeichert\\\\n\\\\nName: ' + name + '\\\\nTyp: ' + type + '\\\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
-  html += "    } else {";
-  html += "      alert('❌ Fehler beim Speichern');";
-  html += "    }";
-  html += "  })";
-  html += "  .catch(function(error) {";
-  html += "    alert('❌ Fehler: ' + error);";
-  html += "  });";
-  html += "}";
-  
+    "function saveInputConfig(inputIndex) {"
+    "  var name = document.getElementById('inputname' + inputIndex).value.trim();"
+    "  var type = document.getElementById('inputtype' + inputIndex).value;"
+    "  var enabled = document.getElementById('inputenabled' + inputIndex).checked ? '1' : '0';"
+    "  if (name === '') {"
+    "    alert('Name darf nicht leer sein!');"
+    "    return;"
+    "  }"
+    "  fetch('/saveinput?input=' + inputIndex + '&name=' + encodeURIComponent(name) + '&type=' + type + '&enabled=' + enabled)"
+    "  .then(function(response) { return response.json(); })"
+    "  .then(function(data) {"
+    "    if (data.success) {"
+    "      alert('✅ Input-Konfiguration gespeichert\\\\n\\\\nName: ' + name + '\\\\nTyp: ' + type + '\\\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));"
+    "    } else {"
+    "      alert('❌ Fehler beim Speichern');"
+    "    }"
+    "  })"
+    "  .catch(function(error) {"
+    "    alert('❌ Fehler: ' + error);"
+    "  });"
+    "}"
+
   // Special Device Config speichern
-  html += "function saveSpecialConfig(deviceIndex) {";
-  html += "  var name = document.getElementById('specialname' + deviceIndex).value.trim();";
-  html += "  var enabled = document.getElementById('specialenabled' + deviceIndex).checked ? '1' : '0';";
-  html += "  if (name === '') {";
-  html += "    alert('Name darf nicht leer sein!');";
-  html += "    return;";
-  html += "  }";
-  html += "  var deviceNames = ['MPR121 Touch-Eingabe', 'LED Dimmer', 'AC Dimmer'];";
-  html += "  fetch('/savespecial?device=' + deviceIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)";
-  html += "  .then(function(response) { return response.json(); })";
-  html += "  .then(function(data) {";
-  html += "    if (data.success) {";
-  html += "      alert('✅ ' + deviceNames[deviceIndex] + ' Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));";
-  html += "    } else {";
-  html += "      alert('❌ Fehler beim Speichern');";
-  html += "    }";
-  html += "  })";
-  html += "  .catch(function(error) {";
-  html += "    alert('❌ Fehler: ' + error);";
-  html += "  });";
-  html += "}";
-  
-  html += "</script>";
-  server.sendContent(html);
-  
-  html = getHTMLFooter();
-  server.sendContent(html);
+    "function saveSpecialConfig(deviceIndex) {"
+    "  var name = document.getElementById('specialname' + deviceIndex).value.trim();"
+    "  var enabled = document.getElementById('specialenabled' + deviceIndex).checked ? '1' : '0';"
+    "  if (name === '') {"
+    "    alert('Name darf nicht leer sein!');"
+    "    return;"
+    "  }"
+    "  var deviceNames = ['MPR121 Touch-Eingabe', 'LED Dimmer', 'AC Dimmer'];"
+    "  fetch('/savespecial?device=' + deviceIndex + '&name=' + encodeURIComponent(name) + '&enabled=' + enabled)"
+    "  .then(function(response) { return response.json(); })"
+    "  .then(function(data) {"
+    "    if (data.success) {"
+    "      alert('✅ ' + deviceNames[deviceIndex] + ' Konfiguration gespeichert\\n\\nName: ' + name + '\\nHA: ' + (enabled === '1' ? 'Ja' : 'Nein'));"
+    "    } else {"
+    "      alert('❌ Fehler beim Speichern');"
+    "    }"
+    "  })"
+    "  .catch(function(error) {"
+    "    alert('❌ Fehler: ' + error);"
+    "  });"
+    "}"
+
+    "</script>"
+  ));
+
+
+  server.sendContent_P(HTML_FOOTER);
+
   server.sendContent("");  // Beende Chunked Transfer
 }
 
@@ -3391,7 +3443,7 @@ void handleSaveName() {
   }
   
   // Erfolg zurückmelden
-  String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  String json = "{\"success\":true,\"relay\":" + String(relayIndex) + ",\"name\":\"" + escapeJSONString(newName) + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -3425,7 +3477,7 @@ void handleSaveCover() {
   }
   
   // Erfolg zurückmelden
-  String json = "{\"success\":true,\"cover\":" + String(coverIndex) + ",\"name\":\"" + newName + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  String json = "{\"success\":true,\"cover\":" + String(coverIndex) + ",\"name\":\"" + escapeJSONString(newName) + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -3467,7 +3519,9 @@ void handleCover() {
 
 // ===== API-Handler für Home Live-Status =====
 void handleHomeState() {
-  String json = "{\"relays\":[";
+  String json;
+  json.reserve(512);
+  json = "{\"relays\":[";
   for (int i = 0; i < 24; i++) {
     json += String(relayState[i]);
     if (i < 23) json += ",";
@@ -3481,6 +3535,11 @@ void handleHomeState() {
     json += "\"closeRelay\":" + String(relayState[closeRelay]) + ",";
     json += "\"resetPending\":" + String(covers[i].resetToTopPending ? "true" : "false") + "}";
     if (i < 1) json += ",";
+  }
+  json += "],\"inputs\":[";
+  for (int i = 0; i < 16; i++) {
+    json += String(inputState[i]);
+    if (i < 15) json += ",";
   }
   json += "]}";
   server.send(200, "application/json", json);
@@ -3524,7 +3583,7 @@ void handleSaveInput() {
   }
   
   // Erfolg zurückmelden
-  String json = "{\"success\":true,\"input\":" + String(inputIndex) + ",\"name\":\"" + newName + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  String json = "{\"success\":true,\"input\":" + String(inputIndex) + ",\"name\":\"" + escapeJSONString(newName) + "\",\"type\":\"" + newType + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -3559,7 +3618,7 @@ void handleSaveSpecial() {
   
   // Erfolg zurückmelden
   String deviceNames[] = {"MPR121", "LED Dimmer", "AC Dimmer"};
-  String json = "{\"success\":true,\"device\":" + String(deviceIndex) + ",\"name\":\"" + newName + "\",\"deviceType\":\"" + deviceNames[deviceIndex] + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
+  String json = "{\"success\":true,\"device\":" + String(deviceIndex) + ",\"name\":\"" + escapeJSONString(newName) + "\",\"deviceType\":\"" + deviceNames[deviceIndex] + "\",\"enabled\":" + String(newEnabled ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -3597,7 +3656,7 @@ void handleMQTT() {
   // Broker IP
   html += "<div style='margin:15px 0;'>";
   html += "<label>Broker IP:</label><br>";
-  html += "<input type='text' id='mqtt_broker' value='" + String(mqttConfig.broker) + "' maxlength='63' ";
+  html += "<input type='text' id='mqtt_broker' value='" + escapeHTML(String(mqttConfig.broker)) + "' maxlength='63' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='192.168.178.1'>";
   html += "</div>";
@@ -3613,7 +3672,7 @@ void handleMQTT() {
   // User
   html += "<div style='margin:15px 0;'>";
   html += "<label>User (optional):</label><br>";
-  html += "<input type='text' id='mqtt_user' value='" + String(mqttConfig.user) + "' maxlength='31' ";
+  html += "<input type='text' id='mqtt_user' value='" + escapeHTML(String(mqttConfig.user)) + "' maxlength='31' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='mqtt_user'>";
   html += "</div>";
@@ -3621,7 +3680,7 @@ void handleMQTT() {
   // Password
   html += "<div style='margin:15px 0;'>";
   html += "<label>Passwort (optional):</label><br>";
-  html += "<input type='password' id='mqtt_pass' value='" + String(mqttConfig.password) + "' maxlength='31' ";
+  html += "<input type='password' id='mqtt_pass' value='" + escapeHTML(String(mqttConfig.password)) + "' maxlength='31' ";
   html += "style='width:100%;padding:8px;background:#333;border:1px solid #555;color:#eee;border-radius:3px;font-size:12px;' ";
   html += "placeholder='****'>";
   html += "</div>";
@@ -3637,8 +3696,8 @@ void handleMQTT() {
   // Info-Box
   html += "<div class='card' style='background:#1a2332;border-color:#1fa3ec;'>";
   html += "<p style='margin:5px 0;font-size:11px;'><b>📌 Home Assistant Integration:</b></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Base Topic: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_BASE_TOPIC) + "</code></p>";
-  html += "<p style='margin:5px 0;font-size:11px;'>• Discovery Prefix: <code style='background:#333;padding:2px 4px;'>" + String(MQTT_DISCOVERY_PREFIX) + "</code></p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Base Topic: <code style='background:#333;padding:2px 4px;'>" + escapeHTML(String(MQTT_BASE_TOPIC)) + "</code></p>";
+  html += "<p style='margin:5px 0;font-size:11px;'>• Discovery Prefix: <code style='background:#333;padding:2px 4px;'>" + escapeHTML(String(MQTT_DISCOVERY_PREFIX)) + "</code></p>";
   html += "<p style='margin:5px 0;font-size:11px;'>• Entities: 20 Lights/Switches (R04-R23), 2 Covers, 16 Binary Sensors, 1 Switch (MPR121)</p>";
   html += "<p style='margin:5px 0;font-size:11px;'>• Auto-Discovery beim Boot</p>";
   html += "</div>";
@@ -4340,6 +4399,12 @@ void setLEDDimmerBrightness(uint8_t brightness) {
 }
 
 void handleLEDDimmer() {
+  const bool ajax = server.arg("ajax") == "1";
+  long requested;
+  if (ajax && (!server.hasArg("brightness") || !parseStrictInteger(server.arg("brightness"), requested) || requested < 0 || requested > 100)) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Brightness must be between 0 and 100\"}");
+    return;
+  }
   if (server.hasArg("brightness")) {
     int brightness = server.arg("brightness").toInt();
     if (brightness >= 0 && brightness <= 100) {
@@ -4347,6 +4412,10 @@ void handleLEDDimmer() {
       uint8_t pwmValue = (brightness * 255) / 100;
       setLEDDimmerBrightness(pwmValue);
     }
+  }
+  if (ajax) {
+    server.send(200, "application/json", "{\"success\":true}");
+    return;
   }
   server.sendHeader("Location", "/");
   server.send(303);
@@ -4362,6 +4431,12 @@ void setACDimmerBrightness(uint8_t brightness) {
 }
 
 void handleACDimmer() {
+  const bool ajax = server.arg("ajax") == "1";
+  long requested;
+  if (ajax && (!server.hasArg("brightness") || !parseStrictInteger(server.arg("brightness"), requested) || requested < 0 || requested > 100)) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Brightness must be between 0 and 100\"}");
+    return;
+  }
   if (server.hasArg("brightness")) {
     int brightness = server.arg("brightness").toInt();
     if (brightness >= 0 && brightness <= 100) {
@@ -4370,6 +4445,10 @@ void handleACDimmer() {
       setACDimmerBrightness(pwmValue);
       // R11 ist jetzt unabhängig vom AC Dimmer - Relais muss separat geschaltet werden
     }
+  }
+  if (ajax) {
+    server.send(200, "application/json", "{\"success\":true}");
+    return;
   }
   server.sendHeader("Location", "/");
   server.send(303);
@@ -4535,6 +4614,66 @@ String getTemperatureHTML() {
 }
 
 // ======================================================
+// MCP23017 Eingangsverarbeitung
+// ======================================================
+void synchronizeMCPInputHandlers() {
+  unsigned long now = millis();
+  kreuzstateEG = inputState[KREUZ_EG1] | (inputState[KREUZ_EG2] << 1);
+  kreuzCandidateEG = kreuzstateEG;
+  kreuzCandidateSinceEG = now;
+  kreuzstateKG = inputState[KREUZ_KG1] | (inputState[KREUZ_KG2] << 1) |
+                 (inputState[KREUZ_KG3] << 2);
+  kreuzCandidateKG = kreuzstateKG;
+  kreuzCandidateSinceKG = now;
+
+  lastIRSwitchLeft = inputState[IR_SWITCH_KITCHEN_LEFT];
+  lastIRSwitchRight = inputState[IR_SWITCH_KITCHEN_RIGHT];
+  irSwitchCandidateLeft = lastIRSwitchLeft;
+  irSwitchCandidateRight = lastIRSwitchRight;
+  irSwitchCandidateSinceLeft = now;
+  irSwitchCandidateSinceRight = now;
+}
+
+void processMCPInputs() {
+  if (!mcpInputReady) return;  // Initialisierungsfehler wurde in setup() gemeldet.
+
+  static unsigned long lastMcpPoll = 0;
+  static bool handlersActive = false;
+  unsigned long now = millis();
+  bool bootDelayElapsed = handlersActive || now - bootTime > bootDelay;
+
+  // Beim Freigeben frisch lesen: Auch Aenderungen waehrend setup() nicht nachholen.
+  if (mcpInterruptFlag || now - lastMcpPoll >= mcpPollInterval ||
+      (bootDelayElapsed && !handlersActive)) {
+    mcpInterruptFlag = false;
+    lastMcpPoll = now;
+    uint16_t gpio = mcpIn.readGPIOAB();
+    bool stateChanged = false;
+    for (int i = 0; i < 16; i++) {
+      uint8_t newState = (gpio >> i) & 1;
+      if (inputState[i] != newState) {
+        inputState[i] = newState;
+        publishInputState(i);
+        stateChanged = true;
+      }
+    }
+    if (stateChanged) {
+      Serial.printf("MCP23017 GPIO: 0x%04X - Input States published via MQTT\n", gpio);
+    }
+  }
+
+  if (!handlersActive || !bootDelayElapsed) {
+    synchronizeMCPInputHandlers();
+    handlersActive = bootDelayElapsed;
+    return;
+  }
+
+  handleIRSwitchKitchen();
+  handleKreuzschaltungEG();
+  handleKreuzschaltungKG();
+}
+
+// ======================================================
 // IR-Switch Küche Funktionen (Kabel EG11)
 // ======================================================
 void handleIRSwitchKitchen() {
@@ -4572,49 +4711,51 @@ void handleIRSwitchKitchen() {
 }
 
 // ======================================================
-// Kreuzschaltung EG Funktionen (2 Schalter)
+// Kreuzschaltung EG Funktionen (2 Schalter, entprellt)
 // ======================================================
 void handleKreuzschaltungEG() {
-  // Aktuelle Zustände der beiden EG Schalter lesen (Bit-kombiniert)
-  // Bit 0 = KREUZ_EG1, Bit 1 = KREUZ_EG2
+  unsigned long now = millis();
   uint8_t currentStateEG = inputState[KREUZ_EG1] | (inputState[KREUZ_EG2] << 1);
-  
-  // Wenn sich der Schalter-Zustand geändert hat → Lampe togglen
-  if (kreuzstateEG != currentStateEG) {
+
+  if (currentStateEG != kreuzCandidateEG) {
+    kreuzCandidateEG = currentStateEG;
+    kreuzCandidateSinceEG = now;
+  }
+
+  if (kreuzCandidateEG != kreuzstateEG &&
+      now - kreuzCandidateSinceEG >= kreuzDebounceInterval) {
+    kreuzstateEG = kreuzCandidateEG;
     Serial.println("EG Kreuzschaltung geändert → Toggle EG Flurlampe (R09)");
     toggleEGFlurlampe(); // R09 (idx 9) Toggle
     
     // Debug-Ausgabe der Schalterstellung
     Serial.printf("EG Schalter: EG1=%d, EG2=%d → Zustand: 0x%02X\n", 
-                  inputState[KREUZ_EG1], inputState[KREUZ_EG2], currentStateEG);
+                  inputState[KREUZ_EG1], inputState[KREUZ_EG2], kreuzstateEG);
   }
-  
-  // Aktuellen Zustand für nächste Iteration speichern
-  kreuzstateEG = currentStateEG;
 }
 
 // ======================================================
-// Kreuzschaltung KG Funktionen (3 Schalter)
+// Kreuzschaltung KG Funktionen (3 Schalter, entprellt)
 // ======================================================
 void handleKreuzschaltungKG() {
-  // Aktuelle Zustände der drei KG Schalter lesen (Bit-kombiniert)
-  // Bit 0 = KREUZ_KG1, Bit 1 = KREUZ_KG2, Bit 2 = KREUZ_KG3
+  unsigned long now = millis();
   uint8_t currentStateKG = inputState[KREUZ_KG1] | 
                           (inputState[KREUZ_KG2] << 1) | 
                           (inputState[KREUZ_KG3] << 2);
   
-  // Wenn sich der Schalter-Zustand geändert hat → Lampe togglen
-  if (kreuzstateKG != currentStateKG) {
+  if (currentStateKG != kreuzCandidateKG) {
+    kreuzCandidateKG = currentStateKG;
+    kreuzCandidateSinceKG = now;
+  }
+
+  if (kreuzCandidateKG != kreuzstateKG &&
+      now - kreuzCandidateSinceKG >= kreuzDebounceInterval) {
+    kreuzstateKG = kreuzCandidateKG;
     Serial.println("KG Kreuzschaltung geändert → Toggle KG Flurlampe (R06)");
     toggleKGFlurlampe(); // R06 (idx 6) Toggle
     
     // Debug-Ausgabe der Schalterstellung
     Serial.printf("KG Schalter: KG1=%d, KG2=%d, KG3=%d → Zustand: 0x%02X\n", 
-                  inputState[KREUZ_KG1], inputState[KREUZ_KG2], inputState[KREUZ_KG3], currentStateKG);
+                  inputState[KREUZ_KG1], inputState[KREUZ_KG2], inputState[KREUZ_KG3], kreuzstateKG);
   }
-  
-  // Aktuellen Zustand für nächste Iteration speichern
-  kreuzstateKG = currentStateKG;
 }
-
-

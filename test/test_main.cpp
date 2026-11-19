@@ -18,6 +18,7 @@
 #include <Wire.h>
 #include <Adafruit_PCA9535.h>
 #include "index_validation.h"
+#include "html_utils.h"
 
 // ---------- I2C Setup ----------
 #define SDA_PIN 33 // GPIO33 (488_EN für dieses Projekt)
@@ -59,6 +60,25 @@ void test_toggle_index_validation(void) {
     TEST_ASSERT_EQUAL_INT(0, index);
     TEST_ASSERT_TRUE(parseIndex(String("23"), 24, index));
     TEST_ASSERT_EQUAL_INT(23, index);
+}
+
+void test_html_escaping(void) {
+    TEST_ASSERT_EQUAL_STRING("", escapeHTML("").c_str());
+    TEST_ASSERT_EQUAL_STRING("Flur R04", escapeHTML("Flur R04").c_str());
+    TEST_ASSERT_EQUAL_STRING("&amp;&lt;&gt;&quot;&#39;", escapeHTML("&<>\"'").c_str());
+    TEST_ASSERT_EQUAL_STRING("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;",
+                             escapeHTML("<script>alert('x')</script>").c_str());
+    TEST_ASSERT_EQUAL_STRING("&amp;lt;", escapeHTML("&lt;").c_str());
+    TEST_ASSERT_EQUAL_STRING("Tür &amp; Küche", escapeHTML("Tür & Küche").c_str());
+}
+
+void test_json_escaping(void) {
+    TEST_ASSERT_EQUAL_STRING("", escapeJSONString("").c_str());
+    TEST_ASSERT_EQUAL_STRING("Tür & Küche", escapeJSONString("Tür & Küche").c_str());
+    TEST_ASSERT_EQUAL_STRING("\\\"\\\\\\u000a\\u0009", escapeJSONString("\"\\\n\t").c_str());
+    String controls;
+    for (char c = 1; c < 0x20; ++c) controls += c;
+    TEST_ASSERT_EQUAL_UINT(31 * 6, escapeJSONString(controls).length());
 }
 
 // ---------- I2C Initialisierung ----------
@@ -272,6 +292,8 @@ void setup() {
     
     // Tests in logischer Reihenfolge
     RUN_TEST(test_toggle_index_validation);
+    RUN_TEST(test_html_escaping);
+    RUN_TEST(test_json_escaping);
     RUN_TEST(test_i2c_init);
     RUN_TEST(test_i2c_scan);
     RUN_TEST(test_board_a_relays);

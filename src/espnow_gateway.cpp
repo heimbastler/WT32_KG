@@ -3,6 +3,7 @@
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 #include "espnow_gateway.h"
+#include "html_utils.h"
 
 // ===== Globale Variablen =====
 ESPNowClient espnowClients[MAX_ESPNOW_CLIENTS];
@@ -280,7 +281,7 @@ String getClientListHTML() {
     html += "<table><tr><th>Name</th><th>Typ</th><th>Status</th><th>Aktion</th></tr>";
     for (int i = 0; i < espnowClientCount; i++) {
       ESPNowClient *c = &espnowClients[i];
-      html += "<tr><td>" + String(c->name) + "</td>";
+      html += "<tr><td>" + escapeHTML(String(c->name)) + "</td>";
       html += "<td>";
       switch (c->type) {
         case CLIENT_TYPE_SENSOR: html += "Sensor"; break;
@@ -308,7 +309,7 @@ String getClientDetailHTML(int clientIndex) {
   }
   
   ESPNowClient *c = &espnowClients[clientIndex];
-  String html = "<h3>📱 Client: " + String(c->name) + "</h3>";
+  String html = "<h3>📱 Client: " + escapeHTML(String(c->name)) + "</h3>";
   html += "<div class='card'>";
   html += "<p><b>MAC:</b> " + macToString(c->mac) + "</p>";
   html += "<p><b>Typ:</b> ";
