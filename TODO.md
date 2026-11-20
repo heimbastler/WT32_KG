@@ -4,6 +4,21 @@ Die Punkte sollen einzeln umgesetzt und nach jedem Schritt gebaut und geprüft w
 Für spätere Änderungen kann direkt eine ID genannt werden, zum Beispiel `P2.1`.
 
 ## Priorität 1: Speicherzugriffe absichern
+- [ ] **P1.0**           +3.3V (VDD vom MCP23017)
+            │
+           ┌┴┐
+           │ │ 4,7 kΩ (Pull-up)
+           └┬┘
+            ├───────────────────► zum Schalter (10 m verdrilltes Paar)
+            │
+           ┌┴┐
+           │ │ 1 kΩ (optionaler Schutzwiderstand)
+           └┬┘
+            ├───────────────────► MCP23017 Pin (GPAx / GPBx)
+            │
+           ═╪═ 100 nF (Keramik)
+            │
+           GND ◄────────────────► Rückleiter vom Schalter & MCP23017 GND
 
 - [x] **P1.1** `handleToggle()` in `src/main.cpp`: `r` auf den gültigen Bereich `0–23` prüfen, bevor `relayState[idx]` oder andere Arrays gelesen bzw. beschrieben werden. Fehlende, nichtnumerische und ungültige Werte mit HTTP 400 beantworten.
 - [x] **P1.2** Arrayindizes aus HTTP- und MQTT-Eingaben einheitlich strikt parsen und validieren. Ungültige HTTP-Indizes mit 400 beantworten; ungültige MQTT-Kommandos verwerfen.
