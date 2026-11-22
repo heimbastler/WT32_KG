@@ -66,7 +66,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 **I²C-Adressen:**
 - Board A: `0x22` (A1 gelötet, A0+A2 offen)
 - Board B: `0x23` (A1+A0 gelötet, A2 offen)  
-- Board C: `0x24` (A2 gelötet, A0+A1 offen) Board nicht im Schrank physisch verbaut.
+- Board C: `0x24` (A2 gelötet, A0+A1 offen) Board nicht im Schrank physisch verbaut 22.11.2026..
 
 ### 📥 Input Expander: MCP23017 (1x 16-Bit GPIO)
 16-Bit I/O Expander für digitale Eingänge (Schalter, Taster, Kreuzschaltungen) und Reserve-Ausgänge
@@ -93,7 +93,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 - `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
 
 **MCP23017 Interrupt:**
-- `INTA/INTB`: Verbunden mit GPIO39 (PRÜFEN!)
+IRQ MCP2317 an GPIO39. Direkt über Draht. Nur INTB angeschlossen! PullUp Widerstand angelötet! geprüft 22.11.2026
 
 **Eingangsverarbeitung:**
 - Die Home-Tabelle zeigt in der ersten Spalte zusätzlich den MCP-Pin: `IN0 (A0)` bis `IN7 (A7)` und `IN8 (B0)` bis `IN15 (B7)` (Port GPA bzw. GPB).
@@ -265,7 +265,7 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
 ║  GPIO33   ║ I²C SDA      ║ ✅ I²C Data für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                             ║
 ║  GPIO35   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
 ║  GPIO36   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter) (Input-only)               ║
-║  GPIO39   ║ IRQ Input    ║ ✅ MCP23017 INTA/INTB - Schalter/Taster Events (INPUT_PULLUP) (Input-only)                           ║
+║  GPIO39   ║ IRQ Input    ║ ✅ MCP23017 INTB - Schalter/Taster Events (INPUT_PULLUP) (Input-only)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║           ║              ║                      🔴 ETHERNET-GPIO (Hardware-reserviert - NICHT ändern!)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
@@ -303,7 +303,7 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
   - SCL: 3.3V Output (WT32) → 5V Input (Touchboards)
   - SDA: Bidirektional 3.3V ↔ 5V
   - IRQ: 5V Output (Wired-OR der 3 Touchboards) → 3.3V Input (MPR121 IRQ Pin ESP32, siehe GPIO-Tabelle)
-  - MCP23017 INTA/INTB: Direkt zu MCP23017 IRQ Pin ESP32 (siehe GPIO-Tabelle, 3.3V Logik, kein Level Shifter nötig)
+  - MCP23017 INTB: Direkt zu MCP23017 IRQ Pin ESP32 (siehe GPIO-Tabelle, 3.3V Logik, kein Level Shifter nötig)
 - **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA)
 - **5V Versorgung** für alle MPR121 Touchboards (über Level Shifter Versorgung oder separate 5V Rail)
 - **4.7kΩ Pullup-Widerstände** am WT32-ETH01 Seite (SDA/SCL zu 3.3V) - auf 3.3V Seite des Level Shifters
@@ -334,6 +334,8 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 - **IRQ Signal: 5V Level** (aktiv LOW bei Touch-Erkennung)
 - **Alle 3 Boards werden auf EINER I²C-Adressenleitung montiert** (Daisy-Chain I²C)
 - **Alle 3 IRQ-Ausgänge werden zu einer Wired-OR Leitung kombiniert** → MPR121 IRQ Pin des ESP32 (siehe GPIO-Haupttabelle) über Level Shifter
+- IRQ MPR121 über levelshifter (port 1 von 4) an GPIO36
+(6.ter pin von antennen seite. Blauer draht kommt vom Level Shifter). Geprüft 22.11.2026
 - ⚠️ **Level Shifter zwingend erforderlich**: 5V Signal darf nicht direkt auf 3.3V-Eingänge des ESP32 gelegt werden!
 
 **Die 3 IRQ-Leitungen können zusammengefasst werden weil:**
@@ -344,7 +346,7 @@ Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik*
 
 **Interrupt-Architektur:**
 Siehe GPIO-Haupttabelle für IRQ-Pin-Zuordnungen:
-- **MCP23017 IRQ Pin**: INTA/INTB → Schalter/Taster Events (3.3V Logik)
+- **MCP23017 IRQ Pin**: INTB → Schalter/Taster Events (3.3V Logik)
 - **MPR121 IRQ Pin**: Wired-OR → Touch Panel Events (5V→3.3V via Level Shifter)
 
 ## 🎛️ System-Funktionen
