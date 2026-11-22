@@ -1,4 +1,4 @@
-# WT32_KG – technische TODOs
+pop# WT32_KG – technische TODOs
 
 
             │
@@ -26,6 +26,11 @@ B0-B2 jeweils:
 - 1KOhm
 - 4.7KOhm
 - KEIN 100nF
+
+
+- [ ] adde Levelshifter in Readme.md
+bidirektionaler 4-Kanal-Logikpegelwandler (Logic Level Converter) auf Basis von BSS138-MOSFETs.
+
 
 
 - [x] **P1.1** `handleToggle()` in `src/main.cpp`: `r` auf den gültigen Bereich `0–23` prüfen, bevor `relayState[idx]` oder andere Arrays gelesen bzw. beschrieben werden. Fehlende, nichtnumerische und ungültige Werte mit HTTP 400 beantworten.
