@@ -3,6 +3,8 @@
 ## 📋 Beschreibung
 Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP32)** Mikrocontroller. Das System steuert verschiedene Haushaltsgeräte wie Lampen, Rollos und andere elektrische Verbraucher über I²C-Relaismodule und kapazitive Touch-Sensoren.
 
+**Hardware-/Codeabgleich: 22.11.2026.** Verdrahtung vor Ort und aktivierte Firmwarefunktionen werden getrennt angegeben. Die MPR121-Leitung ist angeschlossen, ihre Softwareauswertung derzeit jedoch deaktiviert.
+
 ## ⚙️ Hardware
 
 ### 🖥️ Hauptcontroller: WT32-ETH01 (ESP32) – Version 1.4
@@ -13,6 +15,7 @@ Ein intelligentes Hausautomatisierungssystem basierend auf dem **WT32-ETH01 (ESP
 **Features:**
 - Ethernet-Verbindung über LAN8720 PHY
 - I²C Kommunikation (GPIO32/SCL, GPIO33/SDA)
+- Versorgung des WT32-ETH01-Boards mit **5 V aus einem Hutschienen-Netzteil**.
 
 **PINMAP WT32-ETH01**
 
@@ -80,39 +83,80 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 **I²C-Adresse:** `0x20` (Standard - A2, A1, A0 alle auf GND)
 
 **Port A (GPA0-GPA7) - Schalter/Taster:**
-- `GPA0`: noch frei
-- `GPA1`: noch frei
+- `GPA0`: Küchen-Taster links im Code vorgesehen; tatsächlicher Anschluss **PRÜFEN**
+- `GPA1`: Küchen-Taster rechts im Code vorgesehen; tatsächlicher Anschluss **PRÜFEN**
 - `GPA2`: Kreuzschaltung EG1 - Schalter Treppe OG (Input mit Pull-Up)
 - `GPA3`: Kreuzschaltung EG2 - Schalter Eingang EG (Input mit Pull-Up)
 - `GPA4`: Kreuzschaltung KG1 - Schalter Tür Schlafzimmer (Input mit Pull-Up)
 - `GPA5`: Kreuzschaltung KG2 - Schalter Bad KG (Input mit Pull-Up)
 - `GPA6`: Kreuzschaltung KG3 - Schalter Treppe KG-EG (Input mit Pull-Up)
-- `GPA7`: MPR121 IRQ (PRÜFEN!)
+- `GPA7`: Frei, kein MPR121 IRQ angeschlossen (vom Betreiber bestätigt). Der frühere Weg über GPA7 ist nur noch eine auskommentierte Legacy-Variante.
 
 **Port B (GPB0-GPB7) - Reserve:**
 - `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
 
 **MCP23017 Interrupt:**
-IRQ MCP2317 an GPIO39. Direkt über Draht. Nur INTB angeschlossen! PullUp Widerstand angelötet! geprüft 22.11.2026
+Nur **INTB → GPIO39** ist direkt angeschlossen; externer Pull-up angelötet, vor Ort geprüft am 22.11.2026. Der Code verwendet `INPUT` und einen FALLING-Interrupt. Die IOCON-Spiegelung ist aktiviert, daher meldet INTB Änderungen beider MCP-Ports; INTA muss dafür nicht zusätzlich angeschlossen werden. GPIO39 besitzt keinen internen Pull-up.
 
 **Eingangsverarbeitung:**
 - Die Home-Tabelle zeigt in der ersten Spalte zusätzlich den MCP-Pin: `IN0 (A0)` bis `IN7 (A7)` und `IN8 (B0)` bis `IN15 (B7)` (Port GPA bzw. GPB).
 - Alle 16 Eingänge werden bei Interrupts und zusätzlich alle 20 ms nachgelesen, soweit die Hauptschleife dies zulässt. Web-UI und MQTT erhalten weiterhin die gelesenen Rohzustände.
 - EG/KG: Erst eine für mindestens 60 ms unverändert beobachtete Schalterkombination toggelt das jeweilige Flurlicht einmal. Öffnen und Schließen sind Schaltaktionen, keine feste Ein-/Aus-Zuordnung.
-- Küche: Die bisherige Tasterlogik bleibt erhalten (50 ms Entprellung, Toggle bei LOW → HIGH).(PRÜFEN)
+- Küche: Vorbereitete Tasterlogik (50 ms Entprellung, Toggle bei LOW → HIGH). **PRÜFEN:** Tatsächlicher Anschluss und gewünschter Einsatz der beiden Küchen-Eingänge bleiben offen.
 - Während der fünf Sekunden Boot-Verzögerung und beim erstmaligen Freigeben werden stabile Zustände und Entprellkandidaten ohne Relaisaktion synchronisiert. Schaltvorgänge aus der Startphase werden nicht nachgeholt.
 - Die Softwarefilterung ersetzt bei langen Leitungen keine geeignete elektrische Beschaltung; Störungen ab 60 ms können weiterhin als Schaltvorgang gelten.
-- Hardware Entstörung eingelötet. (PRÜFEN)
+- Hardware-Entstörung eingelötet; Wirkung laut Betreiber erfolgreich geprüft. Beschaltung siehe folgenden Abschnitt.
 Host-Regression ohne Hardware: `sh test/host/test_mcp_inputs.sh`.
 
-⚠️ **WICHTIG - Level Shifter erforderlich für MPR121 Touchboards!**
-Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mit **3.3V Logik**.
-- **Alle 3 MPR121 IRQ-Leitungen werden mit Wired-OR kombiniert** → MPR121 IRQ Pin des ESP32 (siehe GPIO-Haupttabelle) über Level Shifter
-- **Ein bidirektionaler Level Shifter ist ZWINGEND erforderlich** (z.B. TXB0108, PCA9306 (PRÜFEN) ) für:
-  - **SCL**: 3.3V → 5V (Output WT32 → Input Touchboards)
-  - **SDA**: bidirektional 3.3V ↔ 5V
-  - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input MPR121 IRQ Pin ESP32)
-- **OHNE Level Shifter**: 5V-Signale beschädigen die 3.3V-Eingänge des ESP32!
+#### Eingelötete Hardware-Entstörung (P1.0)
+
+Beschaltung laut [TODO_ARCHIV.md](TODO_ARCHIV.md), P1.0:
+
+| Eingänge | Serienwiderstand: Schraubklemme → MCP-Eingang | Pull-up: Schraubklemme → Vcc (3,3 V) | Kondensator: MCP-Eingang → GND |
+| --- | --- | --- | --- |
+| A0–A7 und B3–B7 | 1 kΩ | 4,7 kΩ | 100 nF |
+| B0–B2 | 1 kΩ | 4,7 kΩ | **Kein 100-nF-Kondensator** |
+
+Schaltbild aus der TODO, mit ergänzter Vcc-Beschriftung:
+
+```text
+            Vcc (3,3 V)
+             │
+            ┌┴┐
+            │ │ 4,7 kΩ (Pull-up)
+            └┬┘
+             ├───────────────────► Schraubklemme / zum Schalter
+             │
+            ┌┴┐
+            │ │ 1 kΩ (eingelöteter Serienwiderstand)
+            └┬┘
+             ├───────────────────► MCP23017 INx (GPAx / GPBx)
+             │
+            ═╪═ 100 nF (nur A0–A7 und B3–B7)
+             │
+            GND ◄────────────────► Rückleiter vom Schalter & MCP23017 GND
+```
+
+Der Schalter zieht die Schraubklemme beim Schließen auf GND. Bei B0–B2 entfällt der Kondensatorzweig; beide Widerstände sind wie oben angeschlossen. Diese Eingangsbeschaltung ist vom separaten Pull-up der MCP-IRQ-Leitung zu unterscheiden.
+
+### 🔄 Level-Shifter: 4-Kanal-Modul für 5 V ↔ 3,3 V
+
+<img src="pictures/IMG_0564.jpg" alt="Bidirektionaler Vierkanal-Level-Shifter mit HV1–HV4, LV1–LV4 und gemeinsamer Masse" width="40%">
+
+Das verbaute Modul setzt **5-V-Logik (HV) ↔ 3,3-V-Logik (LV)** um und besitzt vier Kanalpaare sowie HV-, LV- und GND-Anschlüsse. Belegung laut Betreiber (22.11.2026):
+
+| Kanal | Verwendung |
+| --- | --- |
+| 1 | Gemeinsame MPR121-IRQ-Leitung → GPIO36 |
+| 3 + 4 | I²C: SCL und SDA; welche Leitung auf welchem der beiden Kanäle liegt, ist noch nicht angegeben |
+
+Ein genauer Transistor-/IC-Typ lässt sich aus dem Foto nicht sicher bestimmen; TXB0108/PCA9306 sind keine bestätigte Modellangabe für dieses Board.
+
+- ESP32-Seite: **3,3-V-Logik**; höhere Signalpegel dürfen nicht direkt an dessen GPIOs gelangen.
+- HV-Seite: **5 V**, LV-Seite: **3,3 V**. Das Modul passt Signalpegel an; es ersetzt kein Netzteil.
+- I²C und Open-Drain-IRQ benötigen passende Pull-ups zu den jeweiligen Logikspannungen und eine gemeinsame Masse.
+- **PRÜFEN:** Transistortyp, Belegung von Kanal 2 und genaue SCL-/SDA-Zuordnung auf Kanal 3/4.
+- **OHNE geeignete Pegelanpassung** können zu hohe Signale die ESP32-Eingänge beschädigen.
 
 ---
 
@@ -264,8 +308,8 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
 ║  GPIO32   ║ I²C SCL      ║ ✅ I²C Clock für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                            ║
 ║  GPIO33   ║ I²C SDA      ║ ✅ I²C Data für alle Devices (PCA9535, MCP23017, MPR121) + 4.7kΩ Pull-up                             ║
 ║  GPIO35   ║ Input-only   ║ ⚪ RESERVE - ADC, kein Pull-up möglich (nicht verwendet)                                              ║
-║  GPIO36   ║ IRQ Input    ║ ✅ MPR121 Wired-OR - 3x Touch Panels kombiniert (5V→3.3V via Level Shifter) (Input-only)               ║
-║  GPIO39   ║ IRQ Input    ║ ✅ MCP23017 INTB - Schalter/Taster Events (INPUT_PULLUP) (Input-only)                           ║
+║  GPIO36   ║ IRQ Input    ║ MPR121 Wired-OR über Level-Shifter-Kanal 1; verdrahtet, Firmwareauswertung deaktiviert (Input-only) ║
+║  GPIO39   ║ IRQ Input    ║ MCP23017 INTB direkt, externer Pull-up; INPUT/FALLING aktiv, beide Ports gespiegelt (Input-only)    ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║           ║              ║                      🔴 ETHERNET-GPIO (Hardware-reserviert - NICHT ändern!)                           ║
 ╠═══════════╬══════════════╬════════════════════════════════════════════════════════════════════════════════════════════════════════╣
@@ -293,21 +337,22 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
 - ⚠️ = Boot-kritisch - nur mit Vorsicht verwenden
 - ⚪ = Reserve/Nicht verwendet
 
+**IRQ-Codeabgleich:** `MCP23017_IRQ_PIN = 39`, `MPR121_IRQ_PIN = 36`. GPIO36 und GPIO39 haben keine internen Pull-ups; `INPUT_PULLUP` ersetzt dort keine externe Beschaltung. Alte auskommentierte GPIO16-Hinweise sind nicht aktuell. Die GPIO-Tabelle beschreibt bei MPR die Verdrahtung, nicht eine aktive Touch-Auswertung.
+
 **🔴 WICHTIG:** 
 - Ethernet-Konfiguration: `ETH.begin()` ohne Parameter (Board-Defaults)
 - Getestet: 30.03.2026 - Web-UI funktioniert
 - **KEINE ÄNDERUNGEN an Ethernet GPIOs mehr vornehmen!**
 
 **Wichtige Verbindungshinweise:**
-- **Bi-direktionaler Level Shifter ERFORDERLICH** (z.B. TXB0108, PCA9306):
-  - SCL: 3.3V Output (WT32) → 5V Input (Touchboards)
-  - SDA: Bidirektional 3.3V ↔ 5V
-  - IRQ: 5V Output (Wired-OR der 3 Touchboards) → 3.3V Input (MPR121 IRQ Pin ESP32, siehe GPIO-Tabelle)
-  - MCP23017 INTB: Direkt zu MCP23017 IRQ Pin ESP32 (siehe GPIO-Tabelle, 3.3V Logik, kein Level Shifter nötig)
+- **Level-Shifter:** 5 V ↔ 3,3 V; Hardware und Kanalbelegung siehe Abschnitt „Level-Shifter“.
+  - SCL/SDA: Über die Kanäle 3 und 4.
+  - MPR121 IRQ: Gemeinsame Open-Drain-Leitung über Kanal 1 → GPIO36.
+  - MCP23017 INTB: Direkt → GPIO39, mit externem Pull-up.
 - **Separate 5V Versorgung** für jedes PCA9535 Relais Board (je ~100mA)
-- **5V Versorgung** für alle MPR121 Touchboards (über Level Shifter Versorgung oder separate 5V Rail)
+- **5V Versorgung** für alle MPR121 Touchboards; der Level-Shifter dient nur der Signalpegelanpassung.
 - **4.7kΩ Pullup-Widerstände** am WT32-ETH01 Seite (SDA/SCL zu 3.3V) - auf 3.3V Seite des Level Shifters
-- **5V Pullup-Widerstände** auf dem Level Shifter 5V-Seite (für Touchboard-Versorgung)
+- **Pull-ups:** Zur jeweiligen Logikversorgung (HV: 5 V, LV: 3,3 V); Pull-ups sind Signalbeschaltung, keine Touchboard-Versorgung.
 - **Gemeinsame Masse (GND)** zwischen WT32-ETH01, Level Shifter und allen Boards zwingend erforderlich
 - **Kabel:** Shielded 0.25mm² für I²C Signalleitungen (SCL/SDA/IRQ)
 - **TouchPanels** benötigen 5V Versorgung + I²C Anschluss
@@ -325,29 +370,31 @@ Das System nutzt **zwei getrennte Netzwerk-Interfaces** parallel:
 - Board C (0x24): R16-R23 (Pin 0-7)
 
 ### 👆 Touch Interface
-Kapazitive Touch-Sensoren für intuitive Bedienung (mit **5V I²C und IRQ Logik**)
+Kapazitive Touch-Sensoren für intuitive Bedienung; Versorgung und tatsächliche Signalpegel sind getrennt zu betrachten.
 
 <img src="pictures/TouchPad 2+3.png" alt="TouchPad Säule" width="30%">
 
 **Wichtige Hinweise zu den MPR121 Touchboards:**
-- **I²C Logik: 5V Level** (kompatibel mit den Relais-Board 5V Versorgung)
-- **IRQ Signal: 5V Level** (aktiv LOW bei Touch-Erkennung)
-- **Alle 3 Boards werden auf EINER I²C-Adressenleitung montiert** (Daisy-Chain I²C)
+- **I²C-/IRQ-Pegelanpassung:** 5 V ↔ 3,3 V über den Level-Shifter; I²C auf Kanal 3/4, gemeinsame IRQ-Leitung auf Kanal 1.
+- **IRQ:** Aktiv LOW, Open-Drain.
+- **Alle 3 Boards teilen SCL/SDA**, besitzen aber unterschiedliche I²C-Adressen (siehe Adresstabelle).
 - **Alle 3 IRQ-Ausgänge werden zu einer Wired-OR Leitung kombiniert** → MPR121 IRQ Pin des ESP32 (siehe GPIO-Haupttabelle) über Level Shifter
 - IRQ MPR121 über levelshifter (port 1 von 4) an GPIO36
 (6.ter pin von antennen seite. Blauer draht kommt vom Level Shifter). Geprüft 22.11.2026
-- ⚠️ **Level Shifter zwingend erforderlich**: 5V Signal darf nicht direkt auf 3.3V-Eingänge des ESP32 gelegt werden!
+- ⚠️ Zu hohe Signalpegel dürfen nicht direkt auf ESP32-Eingänge gelangen.
 
 **Die 3 IRQ-Leitungen können zusammengefasst werden weil:**
 - Alle IRQ-Ausgänge sind aktiv LOW (Open-Drain)
 - Wired-OR: Wenn EINE der 3 Touchboards einen Touch erkennt, wird der MPR121 IRQ Pin auf LOW gezogen
-- Der Interrupt-Handler liest dann, welches Board den Interrupt ausgelöst hat, über die I²C-Adresse
+- Eine aktivierte Touch-Auswertung müsste anschließend die Boards über ihre I²C-Adressen auslesen.
 - Resultat: Nur 1 physikalische IRQ-Leitung statt 3 erforderlich
+
+**Aktueller Firmwarestatus:** In `setup()` sind `initTouchBoards()` und die MPR-Interruptregistrierung auskommentiert. `handleTouchEvents()` wird zwar zeitgesteuert aufgerufen, enthält derzeit aber keine aktive Touch-Auswertung. Die verdrahtete IRQ-Leitung allein aktiviert die Touch-Bedienung nicht. Dies wurde nur dokumentiert; der Code bleibt unverändert.
 
 **Interrupt-Architektur:**
 Siehe GPIO-Haupttabelle für IRQ-Pin-Zuordnungen:
 - **MCP23017 IRQ Pin**: INTB → Schalter/Taster Events (3.3V Logik)
-- **MPR121 IRQ Pin**: Wired-OR → Touch Panel Events (5V→3.3V via Level Shifter)
+- **MPR121 IRQ Pin**: Wired-OR über Level-Shifter → GPIO36; Softwareauswertung noch deaktiviert
 
 ## 🎛️ System-Funktionen
 
@@ -401,6 +448,8 @@ Siehe GPIO-Haupttabelle für IRQ-Pin-Zuordnungen:
 
 ## 🌐 Webserver-Bedienung
 Das System bietet eine intuitive Web-Oberfläche zur Steuerung aller angeschlossenen Geräte:
+
+**Reiter, Features und Copy-and-paste-Hinweise:** [WEB_UI.md](WEB_UI.md).
 
 **Zugriff:** `http://[IP-Adresse-des-WT32]/`
 
