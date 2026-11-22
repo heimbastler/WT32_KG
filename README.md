@@ -57,7 +57,6 @@ Für die komplette GPIO-Funktionszuordnung siehe die GPIO-Übersichtstabelle wei
 ### 🔌 Relais Boards: XL9535-K1V5
 8 Kanal Erweiterungsrelais Modul 5V Netzteil I²C Kommunikation Optokoppler Isolation Board
 
-here is a very good documentations about this type of boards:
 https://github.com/mcauser/micropython-xl9535-kxv5-relay
 
 <img src="pictures/Board XL9535-K8V5.png" alt="Relais Board XL9535-K8V5" width="60%">
@@ -67,7 +66,7 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 **I²C-Adressen:**
 - Board A: `0x22` (A1 gelötet, A0+A2 offen)
 - Board B: `0x23` (A1+A0 gelötet, A2 offen)  
-- Board C: `0x24` (A2 gelötet, A0+A1 offen)
+- Board C: `0x24` (A2 gelötet, A0+A1 offen) Board nicht im Schrank physisch verbaut.
 
 ### 📥 Input Expander: MCP23017 (1x 16-Bit GPIO)
 16-Bit I/O Expander für digitale Eingänge (Schalter, Taster, Kreuzschaltungen) und Reserve-Ausgänge
@@ -81,35 +80,35 @@ https://github.com/mcauser/micropython-xl9535-kxv5-relay
 **I²C-Adresse:** `0x20` (Standard - A2, A1, A0 alle auf GND)
 
 **Port A (GPA0-GPA7) - Schalter/Taster:**
-- `GPA0`: IR-Switch Küche EG11 - Linker Taster (Input mit Pull-Up)
-- `GPA1`: IR-Switch Küche EG11 - Rechter Taster (Input mit Pull-Up)
+- `GPA0`: noch frei
+- `GPA1`: noch frei
 - `GPA2`: Kreuzschaltung EG1 - Schalter Treppe OG (Input mit Pull-Up)
 - `GPA3`: Kreuzschaltung EG2 - Schalter Eingang EG (Input mit Pull-Up)
 - `GPA4`: Kreuzschaltung KG1 - Schalter Tür Schlafzimmer (Input mit Pull-Up)
 - `GPA5`: Kreuzschaltung KG2 - Schalter Bad KG (Input mit Pull-Up)
 - `GPA6`: Kreuzschaltung KG3 - Schalter Treppe KG-EG (Input mit Pull-Up)
-- `GPA7`: Reserve (früher MPR121 IRQ, jetzt auf separatem ESP32 Pin)
+- `GPA7`: MPR121 IRQ (PRÜFEN!)
 
 **Port B (GPB0-GPB7) - Reserve:**
 - `GPB0-GPB7`: Reserve für zukünftige Eingänge/Ausgänge
 
 **MCP23017 Interrupt:**
-- `INTA/INTB`: Verbunden mit GPIO39
+- `INTA/INTB`: Verbunden mit GPIO39 (PRÜFEN!)
 
 **Eingangsverarbeitung:**
 - Die Home-Tabelle zeigt in der ersten Spalte zusätzlich den MCP-Pin: `IN0 (A0)` bis `IN7 (A7)` und `IN8 (B0)` bis `IN15 (B7)` (Port GPA bzw. GPB).
 - Alle 16 Eingänge werden bei Interrupts und zusätzlich alle 20 ms nachgelesen, soweit die Hauptschleife dies zulässt. Web-UI und MQTT erhalten weiterhin die gelesenen Rohzustände.
 - EG/KG: Erst eine für mindestens 60 ms unverändert beobachtete Schalterkombination toggelt das jeweilige Flurlicht einmal. Öffnen und Schließen sind Schaltaktionen, keine feste Ein-/Aus-Zuordnung.
-- Küche: Die bisherige Tasterlogik bleibt erhalten (50 ms Entprellung, Toggle bei LOW → HIGH).
+- Küche: Die bisherige Tasterlogik bleibt erhalten (50 ms Entprellung, Toggle bei LOW → HIGH).(PRÜFEN)
 - Während der fünf Sekunden Boot-Verzögerung und beim erstmaligen Freigeben werden stabile Zustände und Entprellkandidaten ohne Relaisaktion synchronisiert. Schaltvorgänge aus der Startphase werden nicht nachgeholt.
 - Die Softwarefilterung ersetzt bei langen Leitungen keine geeignete elektrische Beschaltung; Störungen ab 60 ms können weiterhin als Schaltvorgang gelten.
-
+- Hardware Entstörung eingelötet. (PRÜFEN)
 Host-Regression ohne Hardware: `sh test/host/test_mcp_inputs.sh`.
 
 ⚠️ **WICHTIG - Level Shifter erforderlich für MPR121 Touchboards!**
 Die 3 MPR121 Touchboards arbeiten mit **5V I²C und 5V IRQ Logik**, der ESP32 mit **3.3V Logik**.
 - **Alle 3 MPR121 IRQ-Leitungen werden mit Wired-OR kombiniert** → MPR121 IRQ Pin des ESP32 (siehe GPIO-Haupttabelle) über Level Shifter
-- **Ein bidirektionaler Level Shifter ist ZWINGEND erforderlich** (z.B. TXB0108, PCA9306) für:
+- **Ein bidirektionaler Level Shifter ist ZWINGEND erforderlich** (z.B. TXB0108, PCA9306 (PRÜFEN) ) für:
   - **SCL**: 3.3V → 5V (Output WT32 → Input Touchboards)
   - **SDA**: bidirektional 3.3V ↔ 5V
   - **IRQ (Wired-OR)**: 5V → 3.3V (Output Touchboards → Input MPR121 IRQ Pin ESP32)
@@ -146,7 +145,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 **Wichtige Hinweise:**
 - DC 12-24V max. 10-30A (je nach Modul-Version)
 - PWM-Dimming 0-100%
-- MOSFET-Ausgang (IRF740 o.ä.)
+- MOSFET-Ausgang zwei parallel geschaltete N-Kanal-MOSFETs vom Typ AOD4184 (oder AOD4184A) im TO-252-Gehäuse (DPAK)
 - 3.3V PWM-Signal (ESP32 kompatibel)
 
 ---
@@ -185,7 +184,7 @@ MOSFET-basierter PWM-Dimmer für 12-24V DC LED-Stripes, LED-Trafos und andere DC
 │    0x20     │ MCP23017│ I/O Expander (Schalter/Reserve)      │
 │    0x22     │ PCA9535 │ Relais Board A (R00-R07)             │
 │    0x23     │ PCA9535 │ Relais Board B (R08-R15)             │
-│    0x24     │ PCA9535 │ Relais Board C (R16-R23)             │
+│    0x24     │ PCA9535 │ Relais Board C (R16-R23) (nicht im Schrank)            │
 │    0x5A     │ MPR121  │ TouchPanel 1 (Tür Garten EG)         │
 │    0x5C     │ MPR121  │ TouchPanel 2 (Säule Garten EG)       │
 │    0x5D     │ MPR121  │ TouchPanel 3 (Säule Straße EG)       │
